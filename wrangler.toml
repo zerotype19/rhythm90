@@ -1,4 +1,9 @@
 name = "rhythm90-api"
 main = "src/backend/index.ts"
 compatibility_date = "2025-07-09"
-compatibility_flags = ["nodejs_compat"] 
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rhythm90-db"
+database_id = "73d8857c-97f9-4cfa-800a-225d7346be67" 
