@@ -1,4 +1,4 @@
 name = "rhythm90-api"
-main = "src/index.ts"
+main = "worker/index.ts"
 compatibility_date = "2025-07-09"
 compatibility_flags = ["nodejs_compat"] 
