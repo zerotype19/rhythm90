@@ -1,26 +1,11 @@
-import { useEffect, useState } from "react";
-import { fetchNotifications } from "../../utils/api";
+import { useState } from "react";
+import { useNotifications } from "../../hooks/useNotifications";
 import { Button } from "./button";
 import { Card, CardContent, CardHeader, CardTitle } from "./card";
 
 export function NotificationDropdown() {
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const { notifications } = useNotifications();
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const data = await fetchNotifications();
-        setNotifications(data);
-      } catch (error) {
-        console.error('Failed to load notifications:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
 
   return (
     <div className="relative">
@@ -46,15 +31,15 @@ export function NotificationDropdown() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="max-h-64 overflow-y-auto">
-                {loading ? (
-                  <div className="p-4 text-center text-gray-500 dark:text-gray-400">Loading...</div>
-                ) : notifications.length === 0 ? (
+                {notifications.length === 0 ? (
                   <div className="p-4 text-center text-gray-500 dark:text-gray-400">No notifications</div>
                 ) : (
                   notifications.map((notification) => (
                     <div key={notification.id} className="p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                       <p className="text-sm text-gray-900 dark:text-gray-100">{notification.message}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Just now</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {new Date(notification.created_at).toLocaleString()}
+                      </p>
                     </div>
                   ))
                 )}

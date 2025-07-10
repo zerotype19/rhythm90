@@ -12,6 +12,7 @@ export default function Navbar() {
           <Link to="/team" className="hover:text-rhythmRed">Team</Link>
           <Link to="/training" className="hover:text-rhythmRed">Training</Link>
           <Link to="/rnr-summary" className="hover:text-rhythmRed">R&R Summary</Link>
+          <Link to="/admin" className="hover:text-rhythmRed">Admin</Link>
           <Link to="/login" className="hover:text-rhythmRed">Login</Link>
           <NotificationDropdown />
           <ThemeToggle />
