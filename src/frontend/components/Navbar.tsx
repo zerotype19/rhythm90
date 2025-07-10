@@ -238,23 +238,28 @@ export default function Navbar() {
       )}>
         {/* Backdrop */}
         <div 
-          className="absolute inset-0 bg-black bg-opacity-50"
+          className="absolute inset-0 bg-black/50"
           onClick={closeMobileMenu}
         />
         
         {/* Slide-out Menu */}
-        <div className="absolute left-0 top-0 h-full w-80 max-w-[80vw] bg-background border-r border-border shadow-xl transform transition-transform duration-300 ease-in-out">
+        <div className="absolute left-0 top-0 h-full w-80 max-w-[80vw] bg-white dark:bg-[#0f172a] border-r border-border shadow-xl transform transition-transform duration-300 ease-in-out">
           <div className="flex flex-col h-full">
             {/* Mobile Header */}
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <h2 className="text-lg font-semibold text-foreground">Menu</h2>
-              <Button variant="ghost" size="sm" onClick={closeMobileMenu}>
+            <div className="flex items-center justify-between p-4 border-b border-border bg-white dark:bg-[#0f172a]">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Menu</h2>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={closeMobileMenu}
+                className="text-gray-900 dark:text-white hover:opacity-75 hover:scale-105 transition-all"
+              >
                 ✕
               </Button>
             </div>
 
             {/* Mobile Navigation */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-[#0f172a]">
               <div className="p-4 space-y-1">
                 {isDemoMode && (
                   <div className="px-3 py-2 mb-4">
@@ -269,7 +274,7 @@ export default function Navbar() {
                   <Link
                     key={item.to}
                     to={item.to}
-                    className="flex items-center px-3 py-2 rounded-md text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    className="flex items-center px-3 py-2 rounded-md text-base font-medium text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
                     onClick={closeMobileMenu}
                   >
                     <span className="flex-1">{item.label}</span>
@@ -280,7 +285,7 @@ export default function Navbar() {
                 {!isAuthenticated && (
                   <Link
                     to="/login"
-                    className="flex items-center px-3 py-2 rounded-md text-base font-medium text-primary hover:bg-primary/10 transition-colors"
+                    className="flex items-center px-3 py-2 rounded-md text-base font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-400/10 transition-colors"
                     onClick={closeMobileMenu}
                   >
                     <span className="flex-1">Login</span>
@@ -289,15 +294,15 @@ export default function Navbar() {
 
                 {/* Admin Section - only for logged-in admin users */}
                 {isAuthenticated && !adminLoading && isAdmin && (
-                  <div className="border-t border-border pt-4 mt-4">
-                    <div className="px-3 py-2 text-sm font-semibold text-muted-foreground">
+                  <div className="border-t border-gray-200 dark:border-white/20 pt-4 mt-4">
+                    <div className="px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white">
                       Admin
                     </div>
                     {adminItems.map((item) => (
                       <Link
                         key={item.to}
                         to={item.to}
-                        className="block px-6 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        className="block px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
                         onClick={closeMobileMenu}
                       >
                         {item.label}
@@ -308,8 +313,8 @@ export default function Navbar() {
 
                 {/* Profile Section - only for logged-in users */}
                 {isAuthenticated && user && (
-                  <div className="border-t border-border pt-4 mt-4">
-                    <div className="px-3 py-2 text-sm font-semibold text-muted-foreground">
+                  <div className="border-t border-gray-200 dark:border-white/20 pt-4 mt-4">
+                    <div className="px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white">
                       Profile
                     </div>
                     {profileItems.map((item) => (
@@ -320,7 +325,7 @@ export default function Navbar() {
                             item.action();
                             closeMobileMenu();
                           }}
-                          className="flex items-center w-full px-6 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                          className="flex items-center w-full px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
                         >
                           <span className="mr-2">{item.icon}</span>
                           {item.label}
@@ -329,7 +334,7 @@ export default function Navbar() {
                         <Link
                           key={item.to}
                           to={item.to}
-                          className="flex items-center px-6 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                          className="flex items-center px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
                           onClick={closeMobileMenu}
                         >
                           <span className="mr-2">{item.icon}</span>
@@ -345,13 +350,13 @@ export default function Navbar() {
 
                 {/* Mobile Announcement Badge - only for logged-in users */}
                 {isAuthenticated && hasUnreadAnnouncement && (
-                  <div className="border-t border-border pt-4 mt-4">
+                  <div className="border-t border-gray-200 dark:border-white/20 pt-4 mt-4">
                     <button
                       onClick={() => {
                         handleAnnouncementClick();
                         closeMobileMenu();
                       }}
-                      className="flex items-center px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors w-full"
+                      className="flex items-center px-3 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors w-full"
                     >
                       <span className="mr-2">🎉</span>
                       What's New
