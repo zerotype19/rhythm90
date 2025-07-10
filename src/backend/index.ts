@@ -105,21 +105,69 @@ export default {
 
     if (pathname === "/ai-signal" && request.method === "POST") {
       const body = await request.json();
-      console.log("OPENAI_API_KEY:", env.OPENAI_API_KEY);
-      const mockResponse = `Looking at \"${body.observation}\", you might explore deeper segmentation.`;
-      return Response.json({ suggestion: mockResponse });
+
+      const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a marketing signals assistant." },
+            { role: "user", content: `Give a short recommendation based on this observation: ${body.observation}` },
+          ],
+        }),
+      });
+
+      const data = await openaiRes.json();
+      const suggestion = data.choices?.[0]?.message?.content || "No suggestion.";
+      return Response.json({ suggestion });
     }
 
     if (pathname === "/ai-hypothesis" && request.method === "POST") {
       const body = await request.json();
-      console.log("OPENAI_API_KEY:", env.OPENAI_API_KEY);
-      const mockHypothesis = `We believe \"${body.play_name}\" will increase engagement by 20%.`;
-      return Response.json({ hypothesis: mockHypothesis });
+
+      const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a marketing strategy assistant." },
+            { role: "user", content: `Generate a short hypothesis about why running the following play could help the marketing team: ${body.play_name}. Focus on business impact.` },
+          ],
+        }),
+      });
+
+      const data = await openaiRes.json();
+      const hypothesis = data.choices?.[0]?.message?.content || "No hypothesis generated.";
+      return Response.json({ hypothesis });
     }
 
     if (pathname === "/admin/team" && request.method === "GET") {
       const members = await env.DB.prepare(`SELECT * FROM team_users WHERE team_id = ?`).bind("team-123").all();
       return Response.json(members);
+    }
+
+    if (pathname === "/admin/team/add" && request.method === "POST") {
+      const body = await request.json();
+      await env.DB.prepare(`INSERT INTO team_users (team_id, user_id, role) VALUES (?, ?, ?)`)
+        .bind("team-123", body.user_id, body.role)
+        .run();
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/admin/team/remove" && request.method === "POST") {
+      const body = await request.json();
+      await env.DB.prepare(`DELETE FROM team_users WHERE team_id = ? AND user_id = ?`)
+        .bind("team-123", body.user_id)
+        .run();
+      return Response.json({ success: true });
     }
 
     if (pathname === "/slack-hook" && request.method === "POST") {

@@ -10,10 +10,14 @@
     "preview": "vite preview --config vite.frontend.config.ts"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.2.3",
     "@types/react-router-dom": "^5.3.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.3"
+    "react-router-dom": "^7.6.3",
+    "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250710.0",
