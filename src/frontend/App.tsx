@@ -17,6 +17,7 @@ import UserSettings from './pages/UserSettings';
 import RequestPasswordReset from './pages/RequestPasswordReset';
 import ResetPassword from './pages/ResetPassword';
 import Pricing from './pages/Pricing';
+import Help from './pages/Help';
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
 
 // Component to track page views
@@ -53,6 +54,7 @@ export default function App() {
                 <Route path="/admin/invite" element={<Invite />} />
                 <Route path="/accept-invite" element={<AcceptInvite />} />
                 <Route path="/settings" element={<UserSettings />} />
+                <Route path="/help" element={<Help />} />
                 <Route path="/request-password-reset" element={<RequestPasswordReset />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/pricing" element={<Pricing />} />

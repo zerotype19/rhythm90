@@ -542,6 +542,13 @@ export default {
     }
 
     if (pathname === "/ai-signal" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const isPremium = await isUserPremium(env, userId);
+      
+      if (!isPremium) {
+        return Response.json({ success: false, message: "Premium subscription required" }, { status: 403 });
+      }
+
       const body = await request.json() as { observation: string };
 
       const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -565,6 +572,13 @@ export default {
     }
 
     if (pathname === "/ai-hypothesis" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const isPremium = await isUserPremium(env, userId);
+      
+      if (!isPremium) {
+        return Response.json({ success: false, message: "Premium subscription required" }, { status: 403 });
+      }
+
       const body = await request.json() as { play_name: string };
 
       const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -656,6 +670,43 @@ export default {
       return Response.json({ success: true });
     }
 
+    // Admin invitation management
+    if (pathname === "/admin/invites" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      // Get all pending invites (not expired, not accepted)
+      const invites = await env.DB.prepare(`
+        SELECT i.*, u.name as invited_by_name 
+        FROM invites i 
+        LEFT JOIN users u ON i.invited_by = u.id 
+        WHERE i.accepted = 0 AND i.expires_at > CURRENT_TIMESTAMP 
+        ORDER BY i.created_at DESC
+      `).all();
+      
+      return Response.json({ invites: invites.results });
+    }
+
+    if (pathname === "/admin/invites/cancel" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { invite_id: string };
+      
+      // Delete the invite
+      await env.DB.prepare(`DELETE FROM invites WHERE id = ?`).bind(body.invite_id).run();
+      
+      return Response.json({ success: true });
+    }
+
     if (pathname === "/invite" && request.method === "POST") {
       const userId = getCurrentUserId();
       const adminStatus = await isAdmin(env, userId);
@@ -666,8 +717,10 @@ export default {
 
       const body = await request.json() as { email: string };
       const token = crypto.randomUUID();
-      await env.DB.prepare(`INSERT INTO invites (id, email, token) VALUES (?, ?, ?)`)
-        .bind(crypto.randomUUID(), body.email, token)
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+      
+      await env.DB.prepare(`INSERT INTO invites (id, email, token, expires_at, invited_by) VALUES (?, ?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), body.email, token, expiresAt, userId)
         .run();
       
       const inviteLink = `${appUrl}/accept-invite?token=${token}`;

@@ -1,19 +1,25 @@
 import { useEffect, useState } from "react";
 import { fetchDashboardStats } from "../utils/api";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
 import Loading from "../components/Loading";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ playCount: 0, signalCount: 0 });
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const data = await fetchDashboardStats();
-        setStats(data);
+        const [statsData, userData] = await Promise.all([
+          fetchDashboardStats(),
+          fetch(`${import.meta.env.VITE_API_URL}/me`).then(res => res.json())
+        ]);
+        setStats(statsData);
+        setUser(userData);
       } catch (error) {
-        console.error('Failed to load dashboard stats:', error);
+        console.error('Failed to load dashboard data:', error);
       } finally {
         setLoading(false);
       }
@@ -25,7 +31,14 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-6xl mx-auto p-8 space-y-6">
-      <h1 className="text-3xl font-bold text-rhythmBlack dark:text-white">Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold text-rhythmBlack dark:text-white">Dashboard</h1>
+        {user?.is_premium && (
+          <Badge className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white">
+            ⭐ Premium
+          </Badge>
+        )}
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="transition-all hover:shadow-lg hover:scale-[1.02]">

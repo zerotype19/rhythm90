@@ -16,22 +16,42 @@ interface AdminData {
   teamCount: number;
 }
 
+interface Invite {
+  id: string;
+  email: string;
+  created_at: string;
+  expires_at: string;
+  invited_by_name?: string;
+}
+
 export default function Admin() {
   const [adminData, setAdminData] = useState<AdminData | null>(null);
+  const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingFlags, setUpdatingFlags] = useState<string | null>(null);
+  const [cancelingInvite, setCancelingInvite] = useState<string | null>(null);
   const featureFlags = useFeatureFlags();
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/teams`);
-        if (!res.ok) {
+        const [teamsRes, invitesRes] = await Promise.all([
+          fetch(`${import.meta.env.VITE_API_URL}/admin/teams`),
+          fetch(`${import.meta.env.VITE_API_URL}/admin/invites`)
+        ]);
+        
+        if (!teamsRes.ok) {
           throw new Error("Access denied. Admin privileges required.");
         }
-        const data = await res.json();
-        setAdminData(data);
+        
+        const teamsData = await teamsRes.json();
+        setAdminData(teamsData);
+        
+        if (invitesRes.ok) {
+          const invitesData = await invitesRes.json();
+          setInvites(invitesData.invites || []);
+        }
       } catch (error) {
         setError(error instanceof Error ? error.message : "Failed to load admin data");
       } finally {
@@ -70,6 +90,29 @@ export default function Admin() {
     }
   }
 
+  async function cancelInvite(inviteId: string) {
+    setCancelingInvite(inviteId);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invite_id: inviteId }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to cancel invite");
+      }
+
+      // Remove invite from state
+      setInvites(invites.filter(invite => invite.id !== inviteId));
+    } catch (error) {
+      console.error("Failed to cancel invite:", error);
+      alert("Failed to cancel invite. Please try again.");
+    } finally {
+      setCancelingInvite(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8">
@@ -105,7 +148,7 @@ export default function Admin() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Teams Section */}
         <Card>
           <CardHeader>
@@ -126,6 +169,49 @@ export default function Admin() {
                         </p>
                       </div>
                       <div className="text-xs text-gray-400">ID: {team.id}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Pending Invites Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Pending Invites ({invites.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {invites.length === 0 ? (
+              <p className="text-gray-500">No pending invites.</p>
+            ) : (
+              <div className="space-y-3">
+                {invites.map((invite) => (
+                  <div key={invite.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{invite.email}</h3>
+                        <p className="text-sm text-gray-500">
+                          Invited: {new Date(invite.created_at).toLocaleDateString()}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Expires: {new Date(invite.expires_at).toLocaleDateString()}
+                        </p>
+                        {invite.invited_by_name && (
+                          <p className="text-xs text-gray-400">
+                            By: {invite.invited_by_name}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => cancelInvite(invite.id)}
+                        disabled={cancelingInvite === invite.id}
+                      >
+                        {cancelingInvite === invite.id ? "Canceling..." : "Cancel"}
+                      </Button>
                     </div>
                   </div>
                 ))}

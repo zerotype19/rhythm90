@@ -224,6 +224,43 @@ export default function UserSettings() {
         </CardContent>
       </Card>
 
+      {/* Billing Management Section (Admin Only) */}
+      {user.role === "admin" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Billing Management</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-gray-600 dark:text-gray-400">
+              Manage team billing and subscriptions
+            </p>
+            <Button 
+              onClick={async () => {
+                try {
+                  const res = await fetch(`${import.meta.env.VITE_API_URL}/create-checkout-session`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ plan: "premium" }),
+                  });
+                  const data = await res.json();
+                  if (data.success && data.checkoutUrl) {
+                    window.location.href = data.checkoutUrl;
+                  } else {
+                    alert("Failed to create checkout session");
+                  }
+                } catch (error) {
+                  console.error("Billing error:", error);
+                  alert("Failed to access billing");
+                }
+              }}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              💳 Manage Billing
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Premium Upgrade Section */}
       {!user.is_premium && (
         <Card>
