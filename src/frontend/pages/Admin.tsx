@@ -11,6 +11,7 @@ import { fetchTeamMembersWithRoles, updateTeamMemberRole, removeTeamMemberFromTe
 import { fetchSlackSettings } from "../utils/api";
 import { sendNotification } from "../utils/api";
 import { fetchApiKeys, createApiKey, revokeApiKey, fetchWorkshopNotificationSettings, updateWorkshopNotificationSettings, exportAuditLog, exportAnalytics } from "../utils/api";
+import GrowthDashboard from "../components/GrowthDashboard";
 
 interface Team {
   id: string;
@@ -106,7 +107,7 @@ export default function Admin() {
   const [exportDateRange, setExportDateRange] = useState('30d');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const featureFlags = useFeatureFlags();
+  const { flags: featureFlags, isFeatureEnabled } = useFeatureFlags();
 
   useEffect(() => {
     load();
@@ -780,6 +781,16 @@ export default function Admin() {
 
       {/* Enterprise Features Section */}
       <EnterpriseFeaturesSection />
+
+      {/* Growth Dashboard Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>📈 Growth Dashboard</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <GrowthDashboard />
+        </CardContent>
+      </Card>
 
       {/* Notification Sending Section */}
       <NotificationSendingSection />

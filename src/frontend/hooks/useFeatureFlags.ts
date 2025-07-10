@@ -1,30 +1,50 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from 'react';
 
 interface FeatureFlags {
-  aiAssistant: boolean;
-  darkMode: boolean;
-  notifications: boolean;
+  [key: string]: boolean;
 }
 
 export function useFeatureFlags() {
-  const [flags, setFlags] = useState<FeatureFlags>({
-    aiAssistant: false,
-    darkMode: false,
-    notifications: false,
-  });
+  const [flags, setFlags] = useState<FeatureFlags>({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/feature-flags`);
-        const data = await res.json();
-        setFlags(data);
-      } catch (error) {
-        console.error("Failed to fetch feature flags:", error);
-      }
-    }
-    load();
+    loadFeatureFlags();
   }, []);
 
-  return flags;
+  const loadFeatureFlags = async () => {
+    try {
+      const response = await fetch('/feature-flags');
+      const data = await response.json();
+      
+      if (data.success) {
+        setFlags(data.flags || {});
+      }
+    } catch (error) {
+      console.error('Failed to load feature flags:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isFeatureEnabled = (flagName: string): boolean => {
+    return flags[flagName] === true;
+  };
+
+  const hasAnyPremiumFeature = (): boolean => {
+    const premiumFlags = [
+      'ai_assistant_premium',
+      'advanced_analytics',
+      'priority_support'
+    ];
+    return premiumFlags.some(flag => flags[flag] === true);
+  };
+
+  return {
+    flags,
+    loading,
+    isFeatureEnabled,
+    hasAnyPremiumFeature,
+    refresh: loadFeatureFlags
+  };
 } 

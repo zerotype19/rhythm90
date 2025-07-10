@@ -12,6 +12,8 @@ export interface Env {
   SLACK_CLIENT_ID?: string;
   SLACK_CLIENT_SECRET?: string;
   SLACK_SIGNING_SECRET?: string;
+  MICROSOFT_CLIENT_ID?: string;
+  MICROSOFT_CLIENT_SECRET?: string;
 }
 
 // Helper function to check if user is admin
@@ -3620,6 +3622,460 @@ export default {
       } catch (error) {
         console.error('Failed to log experiment event:', error);
         return Response.json({ success: false, message: "Failed to log experiment event" }, { status: 500 });
+      }
+    }
+
+    // Microsoft Teams OAuth: Connect
+    if (pathname === "/integrations/teams/connect" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        // Check if already connected
+        const existingIntegration = await env.DB.prepare(`
+          SELECT * FROM integrations WHERE team_id = ? AND provider = 'teams' AND is_active = 1
+        `).bind(teamId).first();
+
+        if (existingIntegration) {
+          return Response.json({ 
+            success: false, 
+            message: "Microsoft Teams is already connected to this team" 
+          }, { status: 400 });
+        }
+
+        // Build Microsoft OAuth URL
+        const microsoftClientId = env.MICROSOFT_CLIENT_ID || 'mock-client-id';
+        const scopes = 'User.Read,Team.ReadBasic.All,ChannelMessage.Read.All';
+        const redirectUri = `${appUrl}/integrations/teams/callback`;
+        const state = crypto.randomUUID(); // For CSRF protection
+
+        const microsoftAuthUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${microsoftClientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${state}`;
+
+        return Response.json({ 
+          success: true, 
+          authUrl: microsoftAuthUrl,
+          state: state
+        });
+      } catch (error) {
+        console.error('Failed to initiate Microsoft Teams OAuth:', error);
+        return Response.json({ success: false, message: "Failed to initiate Microsoft Teams OAuth" }, { status: 500 });
+      }
+    }
+
+    // Microsoft Teams OAuth: Callback
+    if (pathname === "/integrations/teams/callback" && request.method === "GET") {
+      try {
+        const url = new URL(request.url);
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+        const error = url.searchParams.get('error');
+
+        if (error) {
+          return Response.json({ success: false, message: `Microsoft OAuth error: ${error}` }, { status: 400 });
+        }
+
+        if (!code) {
+          return Response.json({ success: false, message: "No authorization code received" }, { status: 400 });
+        }
+
+        // In real implementation, exchange code for access token
+        // For now, mock the token exchange
+        const mockTokenResponse = {
+          access_token: 'mock-teams-token-' + crypto.randomUUID(),
+          tenant_id: 'mock-tenant-' + Math.random().toString(36).substr(2, 8),
+          team_name: 'Mock Microsoft Teams',
+          scope: 'User.Read,Team.ReadBasic.All,ChannelMessage.Read.All'
+        };
+
+        // Store the integration
+        const userId = getCurrentUserId();
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO integrations (id, team_id, provider, workspace_id, workspace_name, access_token, scopes, is_active)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          teamId,
+          'teams',
+          mockTokenResponse.tenant_id,
+          mockTokenResponse.team_name,
+          mockTokenResponse.access_token,
+          mockTokenResponse.scope,
+          true
+        ).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Microsoft Teams connected successfully",
+          workspace: {
+            id: mockTokenResponse.tenant_id,
+            name: mockTokenResponse.team_name
+          }
+        });
+      } catch (error) {
+        console.error('Failed to process Microsoft Teams OAuth callback:', error);
+        return Response.json({ success: false, message: "Failed to process Microsoft Teams OAuth callback" }, { status: 500 });
+      }
+    }
+
+    // Microsoft Teams OAuth: Get status
+    if (pathname === "/integrations/teams/status" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        const integration = await env.DB.prepare(`
+          SELECT workspace_id, workspace_name, scopes, connected_at 
+          FROM integrations 
+          WHERE team_id = ? AND provider = 'teams' AND is_active = 1
+        `).bind(teamId).first();
+
+        return Response.json({ 
+          success: true, 
+          connected: !!integration,
+          workspace: integration ? {
+            id: integration.workspace_id,
+            name: integration.workspace_name,
+            scopes: integration.scopes,
+            connectedAt: integration.connected_at
+          } : null
+        });
+      } catch (error) {
+        console.error('Failed to get Microsoft Teams status:', error);
+        return Response.json({ success: false, message: "Failed to get Microsoft Teams status" }, { status: 500 });
+      }
+    }
+
+    // Microsoft Teams OAuth: Disconnect
+    if (pathname === "/integrations/teams/disconnect" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        await env.DB.prepare(`
+          UPDATE integrations SET is_active = 0 WHERE team_id = ? AND provider = 'teams'
+        `).bind(teamId).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Microsoft Teams disconnected successfully"
+        });
+      } catch (error) {
+        console.error('Failed to disconnect Microsoft Teams:', error);
+        return Response.json({ success: false, message: "Failed to disconnect Microsoft Teams" }, { status: 500 });
+      }
+    }
+
+    // Zapier: Create API key
+    if (pathname === "/integrations/zapier/key" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        const body = await request.json() as { keyName: string };
+        
+        // Generate API key
+        const apiKey = 'zapier_' + crypto.randomUUID().replace(/-/g, '');
+        const hashedKey = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
+          .then(hash => Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join(''));
+
+        await env.DB.prepare(`
+          INSERT INTO zapier_api_keys (id, team_id, api_key, key_name, is_active)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          teamId,
+          hashedKey,
+          body.keyName,
+          true
+        ).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "API key created successfully",
+          apiKey: apiKey // Only return once
+        });
+      } catch (error) {
+        console.error('Failed to create Zapier API key:', error);
+        return Response.json({ success: false, message: "Failed to create API key" }, { status: 500 });
+      }
+    }
+
+    // Zapier: List API keys
+    if (pathname === "/integrations/zapier/keys" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        const keys = await env.DB.prepare(`
+          SELECT id, key_name, is_active, created_at, last_used_at
+          FROM zapier_api_keys 
+          WHERE team_id = ?
+          ORDER BY created_at DESC
+        `).bind(teamId).all();
+
+        return Response.json({ 
+          success: true, 
+          keys: keys.results || []
+        });
+      } catch (error) {
+        console.error('Failed to get Zapier API keys:', error);
+        return Response.json({ success: false, message: "Failed to get API keys" }, { status: 500 });
+      }
+    }
+
+    // Zapier: Webhook endpoint
+    if (pathname === "/integrations/zapier/hooks" && request.method === "POST") {
+      try {
+        const body = await request.json() as { apiKey: string; event: string; data: any };
+        
+        if (!body.apiKey) {
+          return Response.json({ success: false, message: "API key required" }, { status: 401 });
+        }
+
+        // Hash the provided API key for comparison
+        const hashedKey = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.apiKey))
+          .then(hash => Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join(''));
+
+        // Find the API key
+        const apiKeyRecord = await env.DB.prepare(`
+          SELECT team_id, key_name, rate_limit_hourly, is_active
+          FROM zapier_api_keys 
+          WHERE api_key = ? AND is_active = 1
+        `).bind(hashedKey).first();
+
+        if (!apiKeyRecord) {
+          return Response.json({ success: false, message: "Invalid API key" }, { status: 401 });
+        }
+
+        // Rate limiting check
+        const hourlyRequests = await env.DB.prepare(`
+          SELECT COUNT(*) as count 
+          FROM zapier_webhook_logs 
+          WHERE api_key = ? AND created_at > datetime('now', '-1 hour')
+        `).bind(hashedKey).first();
+
+        if (hourlyRequests && (hourlyRequests.count as number) >= ((apiKeyRecord.rate_limit_hourly as number) || 100)) {
+          return Response.json({ success: false, message: "Rate limit exceeded" }, { status: 429 });
+        }
+
+        // Log the webhook
+        const webhookId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO zapier_webhook_logs (id, team_id, api_key, event_type, payload)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(
+          webhookId,
+          apiKeyRecord.team_id,
+          hashedKey,
+          body.event,
+          JSON.stringify(body.data)
+        ).run();
+
+        // Update last used timestamp
+        await env.DB.prepare(`
+          UPDATE zapier_api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE api_key = ?
+        `).bind(hashedKey).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Webhook received successfully",
+          webhookId: webhookId
+        });
+      } catch (error) {
+        console.error('Failed to process Zapier webhook:', error);
+        return Response.json({ success: false, message: "Failed to process webhook" }, { status: 500 });
+      }
+    }
+
+    // Feature Flags: Get team flags
+    if (pathname === "/feature-flags" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        const flags = await env.DB.prepare(`
+          SELECT flag_name, is_enabled FROM feature_flags WHERE team_id = ?
+        `).bind(teamId).all();
+
+        const flagMap: Record<string, boolean> = {};
+        (flags.results || []).forEach((flag: any) => {
+          flagMap[flag.flag_name] = flag.is_enabled;
+        });
+
+        return Response.json({ 
+          success: true, 
+          flags: flagMap
+        });
+      } catch (error) {
+        console.error('Failed to get feature flags:', error);
+        return Response.json({ success: false, message: "Failed to get feature flags" }, { status: 500 });
+      }
+    }
+
+    // Feature Flags: Update flag (admin only)
+    if (pathname === "/feature-flags" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const body = await request.json() as { teamId: string; flagName: string; isEnabled: boolean };
+        
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        // Upsert the feature flag
+        await env.DB.prepare(`
+          INSERT INTO feature_flags (id, team_id, flag_name, is_enabled, updated_at)
+          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(team_id, flag_name) DO UPDATE SET
+            is_enabled = excluded.is_enabled,
+            updated_at = CURRENT_TIMESTAMP
+        `).bind(
+          crypto.randomUUID(),
+          teamId,
+          body.flagName,
+          body.isEnabled
+        ).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Feature flag updated successfully"
+        });
+      } catch (error) {
+        console.error('Failed to update feature flag:', error);
+        return Response.json({ success: false, message: "Failed to update feature flag" }, { status: 500 });
+      }
+    }
+
+    // Growth Stats: Get experiment and referral statistics
+    if (pathname === "/growth/stats" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        // Get referral stats (last 30 days)
+        const referralStats = await env.DB.prepare(`
+          SELECT 
+            COUNT(*) as total_referrals,
+            SUM(CASE WHEN reward_status = 'completed' THEN 1 ELSE 0 END) as completed_referrals,
+            SUM(CASE WHEN reward_status = 'pending' THEN 1 ELSE 0 END) as pending_referrals
+          FROM referrals 
+          WHERE created_at > datetime('now', '-30 days')
+        `).first();
+
+        // Get active experiments
+        const activeExperiments = await env.DB.prepare(`
+          SELECT COUNT(*) as count FROM growth_experiments WHERE is_active = 1
+        `).first();
+
+        // Get top performing variants (last 30 days)
+        const topVariants = await env.DB.prepare(`
+          SELECT 
+            variant,
+            COUNT(*) as exposure_count,
+            SUM(CASE WHEN event_type = 'interaction' THEN 1 ELSE 0 END) as interaction_count,
+            SUM(CASE WHEN event_type = 'conversion' THEN 1 ELSE 0 END) as conversion_count
+          FROM experiment_events 
+          WHERE created_at > datetime('now', '-30 days')
+          GROUP BY variant
+          ORDER BY conversion_count DESC
+          LIMIT 5
+        `).all();
+
+        return Response.json({ 
+          success: true, 
+          stats: {
+            referrals: {
+              total: referralStats?.total_referrals || 0,
+              completed: referralStats?.completed_referrals || 0,
+              pending: referralStats?.pending_referrals || 0
+            },
+            experiments: {
+              active: activeExperiments?.count || 0,
+              topVariants: topVariants.results || []
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Failed to get growth stats:', error);
+        return Response.json({ success: false, message: "Failed to get growth stats" }, { status: 500 });
       }
     }
 
