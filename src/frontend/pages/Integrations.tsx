@@ -26,7 +26,29 @@ export default function Integrations() {
     try {
       const response = await fetch('/integrations/list');
       const data = await response.json();
-      setIntegrations(data.integrations);
+      
+      // Check for existing Slack connection
+      const slackResponse = await fetch('/integrations/slack/status');
+      let slackStatus = { connected: false, workspace: null };
+      
+      try {
+        const slackData = await slackResponse.json();
+        if (slackData.success) {
+          slackStatus = { connected: slackData.connected, workspace: slackData.workspace };
+        }
+      } catch (error) {
+        // Slack status endpoint might not exist yet, that's okay
+      }
+      
+      // Update Slack integration status
+      const updatedIntegrations = data.integrations.map((integration: Integration) => {
+        if (integration.id === 'slack') {
+          return { ...integration, connected: slackStatus.connected };
+        }
+        return integration;
+      });
+      
+      setIntegrations(updatedIntegrations);
     } catch (error) {
       console.error('Failed to load integrations:', error);
     } finally {
@@ -39,24 +61,38 @@ export default function Integrations() {
     setMessage('');
 
     try {
-      const response = await fetch('/integrations/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ integrationId })
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        setMessage(`Successfully connected ${integrationId}!`);
-        // Update the integration status
-        setIntegrations(prev => prev.map(integration => 
-          integration.id === integrationId 
-            ? { ...integration, connected: true }
-            : integration
-        ));
+      if (integrationId === 'slack') {
+        // Handle Slack OAuth flow
+        const response = await fetch('/integrations/slack/connect');
+        const data = await response.json();
+        
+        if (data.success) {
+          // Redirect to Slack OAuth
+          window.location.href = data.authUrl;
+        } else {
+          setMessage(data.message || 'Failed to initiate Slack connection');
+        }
       } else {
-        setMessage(data.message || 'Failed to connect integration');
+        // Handle other integrations (mock)
+        const response = await fetch('/integrations/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ integrationId })
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+          setMessage(`Successfully connected ${integrationId}!`);
+          // Update the integration status
+          setIntegrations(prev => prev.map(integration => 
+            integration.id === integrationId 
+              ? { ...integration, connected: true }
+              : integration
+          ));
+        } else {
+          setMessage(data.message || 'Failed to connect integration');
+        }
       }
     } catch (error) {
       setMessage('Failed to connect integration');
@@ -74,13 +110,32 @@ export default function Integrations() {
     setMessage('');
 
     try {
-      // Mock disconnect - in real implementation, this would call a disconnect endpoint
-      setIntegrations(prev => prev.map(integration => 
-        integration.id === integrationId 
-          ? { ...integration, connected: false }
-          : integration
-      ));
-      setMessage(`Successfully disconnected ${integrationId}`);
+      if (integrationId === 'slack') {
+        // Handle Slack disconnect
+        const response = await fetch('/integrations/slack/disconnect', {
+          method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+          setIntegrations(prev => prev.map(integration => 
+            integration.id === integrationId 
+              ? { ...integration, connected: false }
+              : integration
+          ));
+          setMessage('Successfully disconnected Slack');
+        } else {
+          setMessage(data.message || 'Failed to disconnect Slack');
+        }
+      } else {
+        // Mock disconnect for other integrations
+        setIntegrations(prev => prev.map(integration => 
+          integration.id === integrationId 
+            ? { ...integration, connected: false }
+            : integration
+        ));
+        setMessage(`Successfully disconnected ${integrationId}`);
+      }
     } catch (error) {
       setMessage('Failed to disconnect integration');
     } finally {

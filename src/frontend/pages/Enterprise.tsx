@@ -59,6 +59,29 @@ export default function Enterprise() {
     }
   };
 
+  const handleTestSAMLConnection = async () => {
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const response = await fetch('/saml/test', {
+        method: 'POST'
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setMessage('SAML configuration is valid! Connection test successful.');
+      } else {
+        setMessage(data.message || 'SAML configuration test failed');
+      }
+    } catch (error) {
+      setMessage('Failed to test SAML connection');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="mb-8">
@@ -188,9 +211,19 @@ export default function Enterprise() {
               />
             </div>
 
-            <Button disabled className="w-full sm:w-auto">
-              Enable SSO
-            </Button>
+            <div className="flex gap-2">
+              <Button disabled className="flex-1">
+                Enable SSO
+              </Button>
+              <Button 
+                onClick={handleTestSAMLConnection}
+                disabled={loading}
+                variant="outline"
+                className="flex-1"
+              >
+                {loading ? 'Testing...' : 'Test Connection'}
+              </Button>
+            </div>
           </div>
 
           <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">

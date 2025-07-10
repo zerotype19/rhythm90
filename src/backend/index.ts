@@ -9,6 +9,9 @@ export interface Env {
   PREMIUM_MODE?: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
+  SLACK_CLIENT_ID?: string;
+  SLACK_CLIENT_SECRET?: string;
+  SLACK_SIGNING_SECRET?: string;
 }
 
 // Helper function to check if user is admin
@@ -3274,6 +3277,349 @@ export default {
       } catch (error) {
         console.error('Failed to process referral:', error);
         return Response.json({ success: false, message: "Failed to process referral" }, { status: 500 });
+      }
+    }
+
+    // SAML SSO: Login route (mock)
+    if (pathname === "/saml/login" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        // Mock SAML login - in real implementation, this would redirect to IdP
+        const mockSamlResponse = {
+          success: true,
+          message: "Mock SAML login initiated",
+          redirectUrl: `${appUrl}/saml/acs?mock=true&user=admin@example.com&name=Admin User`
+        };
+
+        return Response.json(mockSamlResponse);
+      } catch (error) {
+        console.error('Failed to initiate SAML login:', error);
+        return Response.json({ success: false, message: "Failed to initiate SAML login" }, { status: 500 });
+      }
+    }
+
+    // SAML SSO: ACS (Assertion Consumer Service) route (mock)
+    if (pathname === "/saml/acs" && request.method === "POST") {
+      try {
+        const formData = await request.formData();
+        const samlResponse = formData.get('SAMLResponse') as string;
+        
+        // Mock SAML response processing
+        const mockUser = {
+          id: "saml-user-123",
+          email: "admin@example.com",
+          name: "Admin User",
+          provider: "saml"
+        };
+
+        // In real implementation, this would validate the SAML response
+        return Response.json({ 
+          success: true, 
+          user: mockUser,
+          message: "SAML authentication successful"
+        });
+      } catch (error) {
+        console.error('Failed to process SAML response:', error);
+        return Response.json({ success: false, message: "Failed to process SAML response" }, { status: 500 });
+      }
+    }
+
+    // SAML SSO: Test connection
+    if (pathname === "/saml/test" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        const samlConfig = await env.DB.prepare(`
+          SELECT entity_id, acs_url, certificate FROM saml_config WHERE team_id = ?
+        `).bind(teamId).first();
+
+        if (!samlConfig) {
+          return Response.json({ success: false, message: "SAML configuration not found" }, { status: 404 });
+        }
+
+        // Validate required fields
+        const requiredFields = ['entity_id', 'acs_url', 'certificate'];
+        const missingFields = requiredFields.filter(field => !samlConfig[field]);
+
+        if (missingFields.length > 0) {
+          return Response.json({ 
+            success: false, 
+            message: `Missing required fields: ${missingFields.join(', ')}` 
+          }, { status: 400 });
+        }
+
+        return Response.json({ 
+          success: true, 
+          message: "SAML configuration is valid",
+          config: {
+            entityId: samlConfig.entity_id,
+            acsUrl: samlConfig.acs_url,
+            hasCertificate: !!samlConfig.certificate
+          }
+        });
+      } catch (error) {
+        console.error('Failed to test SAML connection:', error);
+        return Response.json({ success: false, message: "Failed to test SAML connection" }, { status: 500 });
+      }
+    }
+
+    // Slack OAuth: Connect
+    if (pathname === "/integrations/slack/connect" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        // Check if already connected
+        const existingIntegration = await env.DB.prepare(`
+          SELECT * FROM integrations WHERE team_id = ? AND provider = 'slack' AND is_active = 1
+        `).bind(teamId).first();
+
+        if (existingIntegration) {
+          return Response.json({ 
+            success: false, 
+            message: "Slack is already connected to this team" 
+          }, { status: 400 });
+        }
+
+        // Build Slack OAuth URL
+        const slackClientId = env.SLACK_CLIENT_ID || 'mock-client-id';
+        const scopes = 'chat:write,channels:read,users:read';
+        const redirectUri = `${appUrl}/integrations/slack/callback`;
+        const state = crypto.randomUUID(); // For CSRF protection
+
+        const slackAuthUrl = `https://slack.com/oauth/v2/authorize?client_id=${slackClientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+
+        return Response.json({ 
+          success: true, 
+          authUrl: slackAuthUrl,
+          state: state
+        });
+      } catch (error) {
+        console.error('Failed to initiate Slack OAuth:', error);
+        return Response.json({ success: false, message: "Failed to initiate Slack OAuth" }, { status: 500 });
+      }
+    }
+
+    // Slack OAuth: Callback
+    if (pathname === "/integrations/slack/callback" && request.method === "GET") {
+      try {
+        const url = new URL(request.url);
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+        const error = url.searchParams.get('error');
+
+        if (error) {
+          return Response.json({ success: false, message: `Slack OAuth error: ${error}` }, { status: 400 });
+        }
+
+        if (!code) {
+          return Response.json({ success: false, message: "No authorization code received" }, { status: 400 });
+        }
+
+        // In real implementation, exchange code for access token
+        // For now, mock the token exchange
+        const mockTokenResponse = {
+          access_token: 'mock-slack-token-' + crypto.randomUUID(),
+          team_id: 'T' + Math.random().toString(36).substr(2, 8).toUpperCase(),
+          team_name: 'Mock Slack Workspace',
+          scope: 'chat:write,channels:read,users:read'
+        };
+
+        // Store the integration
+        const userId = getCurrentUserId();
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO integrations (id, team_id, provider, workspace_id, workspace_name, access_token, scopes, is_active)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          teamId,
+          'slack',
+          mockTokenResponse.team_id,
+          mockTokenResponse.team_name,
+          mockTokenResponse.access_token,
+          mockTokenResponse.scope,
+          true
+        ).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Slack connected successfully",
+          workspace: {
+            id: mockTokenResponse.team_id,
+            name: mockTokenResponse.team_name
+          }
+        });
+      } catch (error) {
+        console.error('Failed to process Slack OAuth callback:', error);
+        return Response.json({ success: false, message: "Failed to process Slack OAuth callback" }, { status: 500 });
+      }
+    }
+
+    // Slack OAuth: Get status
+    if (pathname === "/integrations/slack/status" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        const integration = await env.DB.prepare(`
+          SELECT workspace_id, workspace_name, scopes, connected_at 
+          FROM integrations 
+          WHERE team_id = ? AND provider = 'slack' AND is_active = 1
+        `).bind(teamId).first();
+
+        return Response.json({ 
+          success: true, 
+          connected: !!integration,
+          workspace: integration ? {
+            id: integration.workspace_id,
+            name: integration.workspace_name,
+            scopes: integration.scopes,
+            connectedAt: integration.connected_at
+          } : null
+        });
+      } catch (error) {
+        console.error('Failed to get Slack status:', error);
+        return Response.json({ success: false, message: "Failed to get Slack status" }, { status: 500 });
+      }
+    }
+
+    // Slack OAuth: Disconnect
+    if (pathname === "/integrations/slack/disconnect" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        await env.DB.prepare(`
+          UPDATE integrations SET is_active = 0 WHERE team_id = ? AND provider = 'slack'
+        `).bind(teamId).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Slack disconnected successfully"
+        });
+      } catch (error) {
+        console.error('Failed to disconnect Slack:', error);
+        return Response.json({ success: false, message: "Failed to disconnect Slack" }, { status: 500 });
+      }
+    }
+
+    // Growth Experiments: Get user's experiment assignments
+    if (pathname === "/growth/experiments" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      
+      try {
+        const experiments = await env.DB.prepare(`
+          SELECT 
+            ge.id,
+            ge.name,
+            ge.description,
+            ge.variants,
+            ea.variant
+          FROM growth_experiments ge
+          LEFT JOIN experiment_assignments ea ON ge.id = ea.experiment_id AND ea.user_id = ?
+          WHERE ge.is_active = 1
+        `).bind(userId).all();
+
+        return Response.json({ 
+          success: true, 
+          experiments: experiments.results || []
+        });
+      } catch (error) {
+        console.error('Failed to get experiments:', error);
+        return Response.json({ success: false, message: "Failed to get experiments" }, { status: 500 });
+      }
+    }
+
+    // Growth Experiments: Log event
+    if (pathname === "/growth/experiments/event" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const body = await request.json() as { experimentId: string; eventType: string; eventData?: any };
+
+      try {
+        // Get user's assignment for this experiment
+        const assignment = await env.DB.prepare(`
+          SELECT variant, team_id FROM experiment_assignments 
+          WHERE experiment_id = ? AND user_id = ?
+        `).bind(body.experimentId, userId).first();
+
+        if (!assignment) {
+          return Response.json({ success: false, message: "User not assigned to this experiment" }, { status: 400 });
+        }
+
+        // Log the event
+        await env.DB.prepare(`
+          INSERT INTO experiment_events (id, experiment_id, user_id, team_id, variant, event_type, event_data)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          body.experimentId,
+          userId,
+          assignment.team_id,
+          assignment.variant,
+          body.eventType,
+          body.eventData ? JSON.stringify(body.eventData) : null
+        ).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Event logged successfully"
+        });
+      } catch (error) {
+        console.error('Failed to log experiment event:', error);
+        return Response.json({ success: false, message: "Failed to log experiment event" }, { status: 500 });
       }
     }
 
