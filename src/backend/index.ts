@@ -93,14 +93,35 @@ export default {
       const userId = "user-123";
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
       const teamId = userTeam ? userTeam.team_id : "default-team";
-      const summary = await env.DB.prepare(`
-        SELECT p.name, s.observation, s.meaning, s.action 
-        FROM plays p 
-        JOIN signals s ON p.id = s.play_id 
-        WHERE p.team_id = ?`)
-        .bind(teamId)
-        .all();
-      return Response.json({ summary: summary.results });
+      const summary = await env.DB.prepare(`SELECT * FROM rnr_summaries WHERE team_id = ? ORDER BY created_at DESC LIMIT 1`).bind(teamId).first();
+      return Response.json(summary || {});
+    }
+
+    if (pathname === "/rnr-summary" && request.method === "POST") {
+      const body = await request.json();
+      const userId = "user-123";
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam ? userTeam.team_id : "default-team";
+      await env.DB.prepare(`INSERT INTO rnr_summaries (id, team_id, summary, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`)
+        .bind(crypto.randomUUID(), teamId, body.summary)
+        .run();
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/dashboard-stats" && request.method === "GET") {
+      const userId = "user-123";
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam ? userTeam.team_id : "default-team";
+      const playCount = await env.DB.prepare(`SELECT COUNT(*) as count FROM plays WHERE team_id = ?`).bind(teamId).first();
+      const signalCount = await env.DB.prepare(`SELECT COUNT(*) as count FROM signals WHERE play_id IN (SELECT id FROM plays WHERE team_id = ?)`).bind(teamId).first();
+      return Response.json({ playCount: playCount.count, signalCount: signalCount.count });
+    }
+
+    if (pathname === "/notifications" && request.method === "GET") {
+      return Response.json([
+        { id: "1", message: "Kickoff scheduled for Monday." },
+        { id: "2", message: "New signal logged in Play Alpha." },
+      ]);
     }
 
     if (pathname === "/ai-signal" && request.method === "POST") {
@@ -172,8 +193,55 @@ export default {
 
     if (pathname === "/slack-hook" && request.method === "POST") {
       const payload = await request.json();
-      console.log("Received Slack message:", payload.text);
-      return Response.json({ ok: true });
+      const text = payload.text.toLowerCase();
+
+      if (text.startsWith("/log-signal")) {
+        const parts = text.split("|");
+        if (parts.length !== 5) {
+          return Response.json({ 
+            ok: false, 
+            message: "Invalid format. Use /log-signal | play-id | observation | meaning | action" 
+          });
+        }
+        
+        const [_, playId, observation, meaning, action] = parts;
+        const userId = "user-123";
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam ? userTeam.team_id : "default-team";
+        
+        // Verify the play belongs to the user's team
+        const play = await env.DB.prepare(`SELECT id FROM plays WHERE id = ? AND team_id = ?`).bind(playId.trim(), teamId).first();
+        if (!play) {
+          return Response.json({ ok: false, message: "Play not found or access denied." });
+        }
+        
+        await env.DB.prepare(`INSERT INTO signals (id, play_id, observation, meaning, action) VALUES (?, ?, ?, ?, ?)`)
+          .bind(crypto.randomUUID(), playId.trim(), observation.trim(), meaning.trim(), action.trim())
+          .run();
+        return Response.json({ ok: true, message: "Signal logged." });
+      }
+
+      if (text.startsWith("/new-play")) {
+        const parts = text.split("|");
+        if (parts.length !== 3) {
+          return Response.json({ 
+            ok: false, 
+            message: "Invalid format. Use /new-play | name | target outcome" 
+          });
+        }
+        
+        const [_, name, outcome] = parts;
+        const userId = "user-123";
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam ? userTeam.team_id : "default-team";
+        
+        await env.DB.prepare(`INSERT INTO plays (id, team_id, name, target_outcome, status) VALUES (?, ?, ?, ?, ?)`)
+          .bind(crypto.randomUUID(), teamId, name.trim(), outcome.trim(), "active")
+          .run();
+        return Response.json({ ok: true, message: "Play created." });
+      }
+
+      return Response.json({ ok: true, message: "Command received." });
     }
 
     return new Response("Not Found", { status: 404 });

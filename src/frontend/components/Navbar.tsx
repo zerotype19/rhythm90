@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { ThemeToggle } from "./ui/theme-toggle";
+import { NotificationBadge } from "./ui/notification-badge";
 
 export default function Navbar() {
   return (
@@ -10,7 +11,9 @@ export default function Navbar() {
           <Link to="/dashboard" className="hover:text-rhythmRed">Dashboard</Link>
           <Link to="/team" className="hover:text-rhythmRed">Team</Link>
           <Link to="/training" className="hover:text-rhythmRed">Training</Link>
+          <Link to="/rnr-summary" className="hover:text-rhythmRed">R&R Summary</Link>
           <Link to="/login" className="hover:text-rhythmRed">Login</Link>
+          <NotificationBadge />
           <ThemeToggle />
         </div>
       </div>

@@ -69,7 +69,7 @@ export async function fetchAiHypothesis(play_name: string): Promise<{ hypothesis
   });
   if (!res.ok) throw new Error("Failed to get AI hypothesis");
   return res.json();
-} 
+}
 
 export const fetchTeamMembers = async (): Promise<any[]> => {
   const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/team`);
@@ -91,5 +91,29 @@ export const removeTeamMember = async (user_id: string): Promise<any> => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id }),
   });
+  return response.json();
+};
+
+export const fetchRnRSummary = async (): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/rnr-summary`);
+  return response.json();
+};
+
+export const saveRnRSummary = async (summary: string): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/rnr-summary`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary }),
+  });
+  return response.json();
+};
+
+export const fetchDashboardStats = async (): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/dashboard-stats`);
+  return response.json();
+};
+
+export const fetchNotifications = async (): Promise<any[]> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/notifications`);
   return response.json();
 }; 

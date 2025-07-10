@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Team from './pages/Team';
 import Training from './pages/Training';
 import Login from './pages/Login';
+import RnRSummary from './pages/RnRSummary';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/team" element={<Team />} />
             <Route path="/training" element={<Training />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/rnr-summary" element={<RnRSummary />} />
           </Routes>
         </main>
         <Footer />
