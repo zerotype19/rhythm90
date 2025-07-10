@@ -1,65 +1,53 @@
 # Rhythm90.io
 
-Your team's digital toolbox to run smarter marketing quarters.
+A marketing signals platform that helps teams track, analyze, and act on marketing insights.
 
-## Project Overview
+## Features
 
-Rhythm90.io is a monorepo application built with:
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
-- **Backend**: Cloudflare Workers API
-- **Database**: Cloudflare D1 (SQLite)
-- **Deployment**: Automated via GitHub → Cloudflare Pages + Workers
+### Core Features
+- **Marketing Plays**: Create and manage marketing strategies
+- **Signal Tracking**: Log observations, meanings, and actions
+- **R&R Summaries**: Weekly retrospectives and planning
+- **Team Collaboration**: Multi-user support with roles
+- **AI Integration**: OpenAI-powered insights and recommendations
 
-## 🚀 Beta Launch
+### Premium Features
+- **Advanced Analytics**: Deep insights into marketing performance
+- **Unlimited Plays**: Create as many plays as you need
+- **AI Assistant**: Advanced AI-powered insights and recommendations
+- **Priority Support**: Dedicated customer support
 
-Rhythm90.io is now in **Beta**! 
+### Admin Features
+- **Team Management**: Invite and manage team members
+- **Feature Flags**: Toggle features on/off
+- **Beta Invitations**: Manage beta access
+- **Analytics Dashboard**: Track user engagement
 
-### Quick Start for Beta Users
+### Demo Mode
+- **Sample Data**: Pre-populated with demo plays and signals
+- **Safe Testing**: All destructive actions are disabled
+- **Demo Badge**: Clear indication when in demo mode
 
-1. **Access the Beta**: 
-   - **Production**: https://rhythm90.io
-   - **Staging**: https://staging.rhythm90.io
-2. **Demo Mode**: Click "Try Demo Mode" on the landing page for instant exploration
-3. **Admin Access**: Use demo account `admin@example.com` / `demo1234`
-4. **Admin Panel**: Navigate to `/admin` for feature toggles and team management
-5. **Send Invites**: Use `/admin/invite` to invite new beta users
+## Tech Stack
 
-### Demo Mode Features
+- **Frontend**: React + Vite + TypeScript + Tailwind CSS
+- **Backend**: Cloudflare Workers + D1 Database
+- **AI**: OpenAI GPT-4
+- **Styling**: shadcn/ui components with dark mode
+- **Deployment**: Cloudflare Pages + Workers
 
-- **Instant Access**: No account creation required
-- **Sample Data**: Pre-loaded with demo team, plays, and signals
-- **Safe Exploration**: Destructive actions are disabled
-- **Full Functionality**: Experience all features without risk
-
-### Slack/Teams Integration
-
-Connect your Slack or Teams workspace to use these commands:
-
-```
-/log-signal | playId | observation | meaning | action
-/new-play | name | outcome
-```
-
-Example:
-```
-/log-signal | play-123 | Website traffic increased 25% | Users responding to new landing page | Double down on landing page optimization
-/new-play | Q1 Content Blitz | Increase organic traffic by 40%
-```
-
-## Getting Started
+## Development
 
 ### Prerequisites
+- Node.js 18+
+- npm
+- Cloudflare account with D1 database
 
-- Node.js (v18 or higher)
-- npm or yarn
-- Cloudflare account
-- OpenAI API key (for AI features)
-
-### Environment Setup
+### Setup
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/zerotype19/rhythm90.git
+   git clone https://github.com/yourusername/rhythm90.git
    cd rhythm90
    ```
 
@@ -69,179 +57,231 @@ Example:
    ```
 
 3. **Set up environment variables**
-   
-   Copy `.env.example` to `.env.local` and configure:
    ```bash
-   cp .env.example .env.local
+   cp .env.example .env
    ```
    
-   Update the values in `.env.local`:
-   ```
-   VITE_API_URL=https://your-worker-url.workers.dev
-   DEMO_MODE=true  # Enable demo mode for testing
+   Configure your `.env` file:
+   ```env
+   VITE_API_URL=http://localhost:8787
    ```
 
-4. **Configure Cloudflare Workers**
+4. **Set up Cloudflare D1 database**
+   ```bash
+   # Create D1 database
+   npx wrangler d1 create rhythm90-db
    
-   Update `wrangler.toml` with your OpenAI API key:
+   # Apply migrations
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0001_create_tables.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0002_create_feature_flags.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0003_create_invites.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0004_create_notifications.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0005_create_analytics_events.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0006_create_waitlist.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0007_seed_feature_flags.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0008_create_demo_admin.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0009_create_password_reset_tokens.sql
+   npx wrangler d1 execute rhythm90-db --file=./migrations/0010_add_premium_to_users.sql
+   ```
+
+5. **Configure wrangler.toml**
    ```toml
+   name = "rhythm90"
+   main = "src/backend/index.ts"
+   compatibility_date = "2024-01-01"
+
+   [[d1_databases]]
+   binding = "DB"
+   database_name = "rhythm90-db"
+   database_id = "your-database-id"
+
    [vars]
-   OPENAI_API_KEY = "your_actual_openai_api_key_here"
+   OPENAI_API_KEY = "your-openai-api-key"
    APP_URL = "https://rhythm90.io"
-   DEMO_MODE = "true"  # Enable demo mode
+   DEMO_MODE = "false"
+   PREMIUM_MODE = "true"
    ```
 
-### Development
-
-1. **Start the development server**
+6. **Start development server**
    ```bash
    npm run dev
    ```
 
-2. **Deploy to Cloudflare**
+## Deployment
+
+### Production Deployment
+
+1. **Deploy to Cloudflare Workers**
    ```bash
-   npm run deploy
+   npx wrangler deploy
    ```
 
-## Project Structure
+2. **Deploy frontend to Cloudflare Pages**
+   ```bash
+   npm run build
+   # Upload dist/ folder to Cloudflare Pages
+   ```
 
-```
-rhythm90/
-├── src/
-│   ├── frontend/          # React frontend application
-│   │   ├── components/    # Reusable UI components
-│   │   ├── pages/         # Page components
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── contexts/      # React contexts
-│   │   ├── utils/         # Utility functions and API calls
-│   │   └── lib/           # Library utilities
-│   └── backend/           # Cloudflare Worker API
-├── migrations/            # Database migrations
-├── docs/                  # Documentation
-├── dist/                  # Build output
-├── wrangler.toml          # Cloudflare Workers configuration
-└── package.json           # Project dependencies
-```
+3. **Configure environment variables in Cloudflare dashboard**
+   - `OPENAI_API_KEY`: Your OpenAI API key
+   - `APP_URL`: Your production URL
+   - `DEMO_MODE`: "false"
+   - `PREMIUM_MODE`: "true"
 
-## Features
+### Staging Deployment
 
-### Core Features
-- **Team Management**: Add/remove team members with role-based access
-- **Marketing Plays**: Create and manage marketing strategies
-- **Signal Tracking**: Log and analyze marketing signals
-- **R&R Summaries**: Retrospective and review documentation
-- **Account Creation**: Invite-based user onboarding
+1. **Create staging branch**
+   ```bash
+   git checkout -b staging
+   git push origin staging
+   ```
 
-### Admin Features
-- **Feature Flags**: Toggle features on/off in real-time
-- **Beta Invitations**: Send and manage user invitations
-- **Team Overview**: View all teams and member counts
-- **Admin Access Control**: Role-based permissions
-- **Analytics Tracking**: Monitor user engagement and events
+2. **Set up staging environment**
+   ```bash
+   # Create staging D1 database
+   npx wrangler d1 create rhythm90-staging-db
+   
+   # Apply migrations to staging
+   npx wrangler d1 execute rhythm90-staging-db --file=./migrations/0001_create_tables.sql
+   # ... apply all migrations
+   ```
 
-### Demo Mode
-- **Instant Access**: No registration required
-- **Sample Data**: Pre-configured demo content
-- **Safe Environment**: No destructive actions allowed
-- **Full Experience**: All features available for exploration
+3. **Configure staging wrangler.toml**
+   ```toml
+   name = "staging-rhythm90"
+   main = "src/backend/index.ts"
+   compatibility_date = "2024-01-01"
 
-### Integrations
-- **AI Integration**: OpenAI-powered insights and recommendations
-- **Slack/Teams**: Real-time command processing
-- **Notifications**: Real-time system notifications
-- **Dark Mode**: Toggle between light and dark themes
-- **OAuth Login**: Google and Microsoft authentication
+   [[d1_databases]]
+   binding = "DB"
+   database_name = "rhythm90-staging-db"
+   database_id = "your-staging-database-id"
 
-### System Features
-- **Responsive Design**: Works on desktop and mobile devices
-- **Real-time Updates**: Live notifications and data sync
-- **Type Safety**: Full TypeScript coverage
-- **Modern UI**: shadcn/ui components with animations
-- **Analytics**: Anonymous event tracking and insights
+   [vars]
+   OPENAI_API_KEY = "your-openai-api-key"
+   APP_URL = "https://staging.rhythm90.io"
+   DEMO_MODE = "true"
+   PREMIUM_MODE = "true"
+   ```
+
+4. **Deploy staging**
+   ```bash
+   npx wrangler deploy
+   ```
+
+5. **Set up staging admin account**
+   ```bash
+   # Create staging admin user
+   npx wrangler d1 execute rhythm90-staging-db --command="
+   INSERT INTO users (id, email, name, provider, role, is_premium) 
+   VALUES ('admin-staging-123', 'admin-staging@example.com', 'Staging Admin', 'demo', 'admin', true)
+   "
+   ```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key for AI features | Required |
+| `APP_URL` | Base URL for the application | `https://rhythm90.io` |
+| `DEMO_MODE` | Enable demo mode with sample data | `false` |
+| `PREMIUM_MODE` | Enable premium features | `true` |
 
 ## API Endpoints
 
-### Core Endpoints
-- `GET /health` - Health check
-- `GET /board` - Get marketing plays
-- `POST /board` - Create new play
-- `GET /signals` - Get marketing signals
-- `POST /signals` - Log new signal
-- `GET /rnr-summary` - Get R&R summary
-- `POST /rnr-summary` - Create R&R summary
-
-### Authentication Endpoints
+### Authentication
 - `POST /auth/google` - Google OAuth login
 - `POST /auth/microsoft` - Microsoft OAuth login
-- `POST /auth/demo` - Demo mode login
-- `GET /demo/check` - Check demo mode status
+- `POST /auth/demo` - Demo login (when demo mode enabled)
 
-### AI Endpoints
-- `POST /ai-signal` - Get AI recommendation for signal
-- `POST /ai-hypothesis` - Generate AI hypothesis for play
+### User Management
+- `GET /me` - Get current user profile
+- `POST /me` - Update user profile
+- `POST /request-password-reset` - Request password reset
+- `POST /reset-password` - Reset password with token
 
-### Admin Endpoints
+### Marketing Plays
+- `GET /board` - Get all plays
+- `POST /board` - Create new play
+
+### Signals
+- `GET /signals` - Get all signals
+- `POST /signals` - Create new signal
+
+### Premium Features
+- `POST /checkout` - Create checkout session
+- `GET /premium-content` - Get premium content (requires premium subscription)
+
+### Admin
 - `GET /admin/check` - Check admin status
-- `GET /admin/teams` - Get all teams with count
-- `GET /feature-flags` - Get feature flags
-- `POST /feature-flags` - Update feature flag
-- `POST /invite` - Send beta invitation
-- `GET /accept-invite` - Validate invitation token
-- `POST /accept-invite` - Accept invitation and create account
+- `GET /admin/teams` - Get all teams
+- `POST /feature-flags` - Update feature flags
+- `POST /invite` - Send team invitation
 
-### Integration Endpoints
-- `POST /slack-hook` - Process Slack/Teams commands
-- `GET /notifications` - Get real-time notifications
-- `GET /dashboard-stats` - Get dashboard statistics
-- `POST /analytics` - Track analytics events
-- `POST /waitlist` - Join waitlist
+### Analytics
+- `POST /analytics` - Track analytics event
 
 ## Database Schema
 
 ### Core Tables
-- `users` - User accounts with roles
+- `users` - User accounts and profiles
 - `teams` - Team information
-- `team_users` - Team membership
+- `team_users` - User-team relationships
 - `plays` - Marketing plays
 - `signals` - Marketing signals
-- `rnr_summaries` - Retrospective summaries
-
-### System Tables
+- `rnr_summaries` - R&R summaries
 - `notifications` - System notifications
-- `feature_flags` - Feature toggle flags
-- `invites` - Beta invitation tokens
-- `waitlist` - Waitlist signups
-- `analytics_events` - User engagement tracking
 
-## Beta Testing
-
-### Key Features to Test
-1. **Demo Mode**: Try the instant demo experience
-2. **Account Creation**: Test the invite flow
-3. **OAuth Login**: Test Google/Microsoft login
-4. **Admin Panel**: Explore feature flags and team management
-5. **Analytics**: Check that events are being tracked
-6. **Mobile Experience**: Test on various devices
-
-### Known Limitations
-- Demo mode disables destructive actions for safety
-- Analytics events are anonymous (no user identification)
-- Some features may be limited in demo mode
+### Feature Tables
+- `feature_flags` - Feature toggle configuration
+- `invites` - Team invitations
+- `analytics_events` - User analytics tracking
+- `waitlist` - Beta waitlist signups
+- `password_reset_tokens` - Password reset tokens
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly
+4. Add tests if applicable
 5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License - see LICENSE file for details.
 
----
+## Support
 
-**Beta Version**: 1.0  
-**Last Updated**: December 2024  
-**Status**: Active Beta Development
+- Email: support@rhythm90.io
+- Documentation: [docs.rhythm90.io](https://docs.rhythm90.io)
+- Issues: [GitHub Issues](https://github.com/yourusername/rhythm90/issues)
+
+## Changelog
+
+### Batch 13 (Latest)
+- ✅ User Settings page with profile editing
+- ✅ Password reset functionality (scaffolding)
+- ✅ Premium features and paywall system
+- ✅ Staging environment setup
+- ✅ Email templates for password reset
+- ✅ Enhanced analytics tracking
+
+### Batch 12
+- ✅ Account creation after invite acceptance
+- ✅ Demo mode with sample data
+- ✅ Analytics with database storage
+- ✅ Public landing page with waitlist
+- ✅ Beta release packaging
+
+### Previous Batches
+- Batches 1-11: Core platform features, admin system, team management, notifications, feature flags, beta invitations, and analytics foundation.
+
+## Roadmap
+
+### Next Features
+- Team billing and Stripe integration
+- Enhanced team invitation system
+- Help center and support chat widget
+- Advanced reporting and exports
+- Mobile app development

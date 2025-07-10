@@ -13,6 +13,10 @@ import RnRSummary from './pages/RnRSummary';
 import Admin from './pages/Admin';
 import Invite from './pages/Invite';
 import AcceptInvite from './pages/AcceptInvite';
+import UserSettings from './pages/UserSettings';
+import RequestPasswordReset from './pages/RequestPasswordReset';
+import ResetPassword from './pages/ResetPassword';
+import Pricing from './pages/Pricing';
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
 
 // Component to track page views
@@ -48,6 +52,10 @@ export default function App() {
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/admin/invite" element={<Invite />} />
                 <Route path="/accept-invite" element={<AcceptInvite />} />
+                <Route path="/settings" element={<UserSettings />} />
+                <Route path="/request-password-reset" element={<RequestPasswordReset />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/pricing" element={<Pricing />} />
               </Routes>
             </main>
             <Footer />

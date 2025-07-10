@@ -3,6 +3,7 @@ import { ThemeToggle } from "./ui/theme-toggle";
 import { NotificationDropdown } from "./ui/notification-dropdown";
 import { useAdmin } from "../contexts/AdminContext";
 import { useDemo } from "../contexts/DemoContext";
+import { Badge } from "./ui/badge";
 
 export default function Navbar() {
   const { isAdmin, loading } = useAdmin();
@@ -25,6 +26,7 @@ export default function Navbar() {
           {!loading && isAdmin && (
             <Link to="/admin" className="hover:text-rhythmRed">Admin</Link>
           )}
+          <Link to="/settings" className="hover:text-rhythmRed">Settings</Link>
           <Link to="/login" className="hover:text-rhythmRed">Login</Link>
           <NotificationDropdown />
           <ThemeToggle />

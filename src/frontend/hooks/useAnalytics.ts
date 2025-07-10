@@ -21,6 +21,11 @@ export const AnalyticsEvents = {
   WAITLIST_JOINED: "waitlist_joined",
   DEMO_LOGIN: "demo_login",
   PAGE_VIEW: "page_view",
+  SETTINGS_UPDATED: "settings_updated",
+  PASSWORD_RESET_REQUESTED: "password_reset_requested",
+  PASSWORD_RESET_COMPLETED: "password_reset_completed",
+  PREMIUM_UPGRADE_CLICKED: "premium_upgrade_clicked",
+  PREMIUM_CONTENT_ACCESSED: "premium_content_accessed",
 } as const;
 
 // Hook for easy access to tracking function
