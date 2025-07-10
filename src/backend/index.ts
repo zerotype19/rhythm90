@@ -600,26 +600,84 @@ export default {
         return Response.json({ success: false, message: "Premium subscription required" }, { status: 403 });
       }
 
-      const body = await request.json() as { observation: string };
+      const body = await request.json() as { 
+        signal_text: string; 
+        play_name?: string; 
+        team?: string; 
+        play_goal?: string; 
+        recent_signals?: string 
+      };
 
-      const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: "You are a marketing signals assistant." },
-            { role: "user", content: `Give a short recommendation based on this observation: ${body.observation}` },
-          ],
-        }),
-      });
+      // Get user's team for context
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
 
-      const data = await openaiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
-      const suggestion = data.choices?.[0]?.message?.content || "No suggestion.";
-      return Response.json({ suggestion });
+      // Build context for AI
+      let context = `Signal: ${body.signal_text}`;
+      if (body.play_name) context += `\nPlay: ${body.play_name}`;
+      if (body.play_goal) context += `\nGoal: ${body.play_goal}`;
+      if (body.recent_signals) context += `\nRecent signals: ${body.recent_signals}`;
+
+      try {
+        const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o",
+            messages: [
+              { 
+                role: "system", 
+                content: "You are a marketing signals assistant. Analyze the signal and provide structured advice. Return only valid JSON with 'interpretation' and 'suggestedAction' fields." 
+              },
+              { 
+                role: "user", 
+                content: `Analyze this marketing signal and provide interpretation and suggested next action: ${context}` 
+              },
+            ],
+            temperature: 0.7,
+          }),
+        });
+
+        const data = await openaiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+        const aiResponse = data.choices?.[0]?.message?.content || "";
+        
+        // Try to parse JSON response
+        let result;
+        try {
+          result = JSON.parse(aiResponse);
+        } catch {
+          // Fallback if AI doesn't return valid JSON
+          result = {
+            interpretation: aiResponse || "Unable to interpret signal at this time.",
+            suggestedAction: "Please review the signal manually and take appropriate action."
+          };
+        }
+
+        // Track usage
+        await env.DB.prepare(`
+          INSERT INTO ai_usage (id, team_id, feature, count, updated_at)
+          VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+          ON CONFLICT(team_id, feature) DO UPDATE SET
+          count = count + 1,
+          updated_at = CURRENT_TIMESTAMP
+        `).bind(crypto.randomUUID(), teamId, "signal_help").run();
+
+        return Response.json({ 
+          success: true,
+          interpretation: result.interpretation,
+          suggestedAction: result.suggestedAction
+        });
+      } catch (error) {
+        console.error("AI API error:", error);
+        return Response.json({ 
+          success: false, 
+          interpretation: "⚠️ AI is currently unavailable. Please try again later.",
+          suggestedAction: "Please review the signal manually and take appropriate action."
+        });
+      }
     }
 
     if (pathname === "/ai-hypothesis" && request.method === "POST") {
@@ -630,26 +688,81 @@ export default {
         return Response.json({ success: false, message: "Premium subscription required" }, { status: 403 });
       }
 
-      const body = await request.json() as { play_name: string };
+      const body = await request.json() as { 
+        play_description: string; 
+        goal: string;
+        team?: string;
+      };
 
-      const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: "You are a marketing strategy assistant." },
-            { role: "user", content: `Generate a short hypothesis about why running the following play could help the marketing team: ${body.play_name}. Focus on business impact.` },
-          ],
-        }),
-      });
+      // Get user's team for context
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
 
-      const data = await openaiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
-      const hypothesis = data.choices?.[0]?.message?.content || "No hypothesis generated.";
-      return Response.json({ hypothesis });
+      const context = `Play Description: ${body.play_description}\nGoal: ${body.goal}`;
+
+      try {
+        const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o",
+            messages: [
+              { 
+                role: "system", 
+                content: "You are a marketing strategy assistant. Generate a hypothesis for a marketing play. Return only valid JSON with 'hypothesis', 'expectedOutcome', and 'risks' fields." 
+              },
+              { 
+                role: "user", 
+                content: `Generate a hypothesis for this marketing play: ${context}` 
+              },
+            ],
+            temperature: 0.7,
+          }),
+        });
+
+        const data = await openaiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+        const aiResponse = data.choices?.[0]?.message?.content || "";
+        
+        // Try to parse JSON response
+        let result;
+        try {
+          result = JSON.parse(aiResponse);
+        } catch {
+          // Fallback if AI doesn't return valid JSON
+          result = {
+            hypothesis: aiResponse || "Unable to generate hypothesis at this time.",
+            expectedOutcome: "Review the play description and goal to determine expected outcomes.",
+            risks: "Consider potential risks and mitigation strategies."
+          };
+        }
+
+        // Track usage
+        await env.DB.prepare(`
+          INSERT INTO ai_usage (id, team_id, feature, count, updated_at)
+          VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+          ON CONFLICT(team_id, feature) DO UPDATE SET
+          count = count + 1,
+          updated_at = CURRENT_TIMESTAMP
+        `).bind(crypto.randomUUID(), teamId, "hypothesis_generator").run();
+
+        return Response.json({ 
+          success: true,
+          hypothesis: result.hypothesis,
+          expectedOutcome: result.expectedOutcome,
+          risks: result.risks
+        });
+      } catch (error) {
+        console.error("AI API error:", error);
+        return Response.json({ 
+          success: false, 
+          hypothesis: "⚠️ AI is currently unavailable. Please try again later.",
+          expectedOutcome: "Review the play description and goal to determine expected outcomes.",
+          risks: "Consider potential risks and mitigation strategies."
+        });
+      }
     }
 
     if (pathname === "/admin/team" && request.method === "GET") {
@@ -1196,6 +1309,144 @@ export default {
       return Response.json({ members: members.results });
     }
 
+    // Slack/Teams command handler
+    if (pathname === "/slack/command" && request.method === "POST") {
+      const formData = await request.formData();
+      const command = formData.get("command") as string;
+      const text = formData.get("text") as string;
+      const userId = formData.get("user_id") as string;
+      const teamId = formData.get("team_id") as string;
+
+      try {
+        if (command === "/r90") {
+          const parts = text.split("|").map(s => s.trim());
+          
+          if (parts[0] === "new-play" && parts.length >= 3) {
+            const playName = parts[1].replace(/"/g, "");
+            const goal = parts[2].replace(/"/g, "");
+            
+            // Create play
+            const playId = crypto.randomUUID();
+            await env.DB.prepare(`INSERT INTO plays (id, team_id, name, target_outcome, status) VALUES (?, ?, ?, ?, ?)`)
+              .bind(playId, teamId, playName, goal, "active")
+              .run();
+            
+            // Send webhook notification
+            await sendSlackNotification(env, teamId, `✅ New play created: ${playName}`);
+            
+            return Response.json({
+              response_type: "in_channel",
+              text: `✅ Play "${playName}" created successfully!`
+            });
+          }
+          
+          if (parts[0] === "log-signal" && parts.length >= 4) {
+            const playId = parts[1].replace(/"/g, "");
+            const observation = parts[2].replace(/"/g, "");
+            const meaning = parts[3].replace(/"/g, "");
+            
+            // Log signal
+            await env.DB.prepare(`INSERT INTO signals (id, play_id, observation, meaning, action) VALUES (?, ?, ?, ?, ?)`)
+              .bind(crypto.randomUUID(), playId, observation, meaning, "Action needed")
+              .run();
+            
+            // Send webhook notification
+            await sendSlackNotification(env, teamId, `⚠️ Signal logged for play ${playId}: ${observation}`);
+            
+            return Response.json({
+              response_type: "in_channel",
+              text: `✅ Signal logged successfully!`
+            });
+          }
+          
+          return Response.json({
+            text: "🤖 Unknown command. Use `/r90 new-play \"Name\" | \"Goal\"` or `/r90 log-signal \"Play ID\" | \"Observation\" | \"Meaning\"`"
+          });
+        }
+      } catch (error) {
+        console.error("Slack command error:", error);
+        return Response.json({
+          text: "⚠️ Error processing command. Please try again."
+        });
+      }
+    }
+
+    // Slack/Teams webhook notifications
+    if (pathname === "/slack/webhook" && request.method === "POST") {
+      const body = await request.json() as { event: string; data: any };
+      
+      try {
+        // Handle different event types
+        if (body.event === "play_created") {
+          await sendSlackNotification(env, body.data.team_id, `✅ New play created: ${body.data.play_name}`);
+        } else if (body.event === "signal_logged") {
+          await sendSlackNotification(env, body.data.team_id, `⚠️ Signal needs review: ${body.data.observation}`);
+        } else if (body.event === "team_invite") {
+          await sendSlackNotification(env, body.data.team_id, `👥 Team invite sent to: ${body.data.email}`);
+        }
+        
+        return Response.json({ success: true });
+      } catch (error) {
+        console.error("Slack webhook error:", error);
+        return Response.json({ success: false }, { status: 500 });
+      }
+    }
+
+    // Slack integration settings
+    if (pathname === "/slack/settings" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const settings = await env.DB.prepare(`SELECT * FROM slack_settings WHERE team_id = ?`).bind(teamId).first();
+      
+      // Return mock data for now
+      return Response.json({
+        workspace_name: settings?.workspace_name || "Demo Workspace",
+        connected_channels: settings?.connected_channels || "All Channels",
+        last_sync: settings?.last_sync || new Date().toISOString(),
+        is_active: settings?.is_active || false
+      });
+    }
+
+    // Templates route
+    if (pathname === "/templates" && request.method === "GET") {
+      const templates = await env.DB.prepare(`
+        SELECT id, title, category, description, content
+        FROM templates
+        WHERE is_active = 1
+        ORDER BY category, title
+      `).all();
+      
+      return Response.json({ templates: templates.results });
+    }
+
+    // Workshop route (placeholder)
+    if (pathname === "/workshop" && request.method === "GET") {
+      return Response.json({ 
+        status: "ok", 
+        message: "Workshop mode coming soon." 
+      });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
-}; 
+};
+
+// Helper function to send Slack notifications
+async function sendSlackNotification(env: Env, teamId: string, message: string) {
+  try {
+    const settings = await env.DB.prepare(`SELECT webhook_url FROM slack_settings WHERE team_id = ? AND is_active = 1`).bind(teamId).first();
+    
+    if (settings?.webhook_url) {
+      await fetch(settings.webhook_url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: message })
+      });
+    }
+  } catch (error) {
+    console.error("Failed to send Slack notification:", error);
+    // Don't throw - webhook failures shouldn't break the main flow
+  }
+} 

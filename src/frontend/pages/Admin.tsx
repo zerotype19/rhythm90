@@ -8,6 +8,7 @@ import { useFeatureFlags } from "../hooks/useFeatureFlags";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 import { Link } from "react-router-dom";
 import { fetchTeamMembersWithRoles, updateTeamMemberRole, removeTeamMemberFromTeam } from "../utils/api";
+import { fetchSlackSettings } from "../utils/api";
 
 interface Team {
   id: string;
@@ -598,6 +599,9 @@ export default function Admin() {
 
       {/* Team Role Management Section */}
       <TeamRoleManagement />
+
+      {/* Slack Integration Section */}
+      <SlackIntegrationSection />
     </div>
   );
 }
@@ -749,6 +753,141 @@ function TeamRoleManagement() {
         </div>
         {members.length === 0 && (
           <p className="text-gray-500 text-center py-4">No team members found.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Slack Integration Section Component
+function SlackIntegrationSection() {
+  const [slackSettings, setSlackSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  useEffect(() => {
+    loadSlackSettings();
+  }, []);
+
+  async function loadSlackSettings() {
+    try {
+      const data = await fetchSlackSettings();
+      setSlackSettings(data);
+    } catch (error) {
+      console.error("Failed to load Slack settings:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function reconnectSlack() {
+    setReconnecting(true);
+    try {
+      // Placeholder action - would integrate with actual Slack OAuth
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      alert("Slack reconnection would be implemented here");
+    } catch (error) {
+      console.error("Failed to reconnect Slack:", error);
+      alert("Failed to reconnect Slack. Please try again.");
+    } finally {
+      setReconnecting(false);
+    }
+  }
+
+  async function disconnectSlack() {
+    if (!confirm("Are you sure you want to disconnect Slack integration?")) {
+      return;
+    }
+    
+    setDisconnecting(true);
+    try {
+      // Placeholder action - would update database
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setSlackSettings({ ...slackSettings, is_active: false });
+      alert("Slack disconnected successfully");
+    } catch (error) {
+      console.error("Failed to disconnect Slack:", error);
+      alert("Failed to disconnect Slack. Please try again.");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Slack Integration</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center">Loading Slack settings...</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          💬 Slack Integration
+          <Badge variant={slackSettings?.is_active ? "default" : "secondary"}>
+            {slackSettings?.is_active ? "Connected" : "Disconnected"}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {slackSettings?.is_active ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white mb-2">Workspace</h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {slackSettings.workspace_name || "Demo Workspace"}
+                </p>
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white mb-2">Connected Channels</h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {slackSettings.connected_channels || "All Channels"}
+                </p>
+              </div>
+            </div>
+            
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white mb-2">Last Sync</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {slackSettings.last_sync ? new Date(slackSettings.last_sync).toLocaleString() : "Never"}
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={reconnectSlack}
+                disabled={reconnecting}
+              >
+                {reconnecting ? "Reconnecting..." : "Reconnect"}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={disconnectSlack}
+                disabled={disconnecting}
+              >
+                {disconnecting ? "Disconnecting..." : "Disconnect"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center space-y-4">
+            <p className="text-gray-600 dark:text-gray-400">
+              Connect your Slack workspace to enable team collaboration and notifications.
+            </p>
+            <Button onClick={reconnectSlack} disabled={reconnecting}>
+              {reconnecting ? "Connecting..." : "Connect Slack"}
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>

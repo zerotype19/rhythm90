@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge";
 import Loading from "../components/Loading";
 import OnboardingSidebar from "../components/OnboardingSidebar";
+import AiAssistantPanel from "../components/AiAssistantPanel";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ playCount: 0, signalCount: 0 });
@@ -97,6 +98,11 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* AI Assistant Panel */}
+      <div className="flex justify-center">
+        <AiAssistantPanel />
+      </div>
     </div>
   );
 } 

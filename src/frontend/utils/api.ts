@@ -71,6 +71,53 @@ export async function fetchAiHypothesis(play_name: string): Promise<{ hypothesis
   return res.json();
 }
 
+// Updated AI functions with new structured format
+export async function getAiSignalHelp(params: {
+  signal_text: string;
+  play_name?: string;
+  play_goal?: string;
+  recent_signals?: string;
+}): Promise<{ success: boolean; interpretation: string; suggestedAction: string }> {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/ai-signal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error("Failed to get AI signal help");
+  return res.json();
+}
+
+export async function generateAiHypothesis(params: {
+  play_description: string;
+  goal: string;
+}): Promise<{ success: boolean; hypothesis: string; expectedOutcome: string; risks: string }> {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/ai-hypothesis`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error("Failed to generate AI hypothesis");
+  return res.json();
+}
+
+// Templates
+export async function fetchTemplates(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/templates`);
+  return response.json();
+}
+
+// Slack integration
+export async function fetchSlackSettings(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/slack/settings`);
+  return response.json();
+}
+
+// Workshop
+export async function fetchWorkshopStatus(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/workshop`);
+  return response.json();
+}
+
 export const fetchTeamMembers = async (): Promise<any[]> => {
   const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/team`);
   return response.json();
