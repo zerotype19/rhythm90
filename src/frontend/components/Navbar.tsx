@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { ThemeToggle } from "./ui/theme-toggle";
 import { NotificationDropdown } from "./ui/notification-dropdown";
@@ -13,9 +13,18 @@ import { cn } from "../lib/utils";
 export default function Navbar() {
   const { isAdmin, loading } = useAdmin();
   const { isDemoMode } = useDemo();
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const { hasUnreadAnnouncement, latestAnnouncement, markAsRead } = useAnnouncements();
+
+  // Determine if user is logged in based on route
+  const isLoggedInRoute = [
+    '/dashboard', '/admin', '/team', '/workshop', '/analytics', 
+    '/integrations', '/settings', '/developer', '/training', 
+    '/public-api', '/enterprise', '/referrals', '/rnr-summary', '/changelog'
+  ].some(route => location.pathname.startsWith(route));
 
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
@@ -33,21 +42,21 @@ export default function Navbar() {
     markAsRead(announcementId);
   };
 
-  const navigationItems = [
+  // Public navigation items
+  const publicNavigationItems = [
+    { to: "/", label: "Home" },
+    { to: "/marketing", label: "Product" },
+    { to: "/pricing", label: "Pricing" },
+    { to: "/help", label: "Help" },
+  ];
+
+  // Logged-in navigation items
+  const loggedInNavigationItems = [
     { to: "/dashboard", label: "Dashboard" },
-    { to: "/product", label: "Product" },
     { to: "/team", label: "Team" },
-    { to: "/training", label: "Training" },
     { to: "/workshop", label: "Workshop" },
     { to: "/analytics", label: "Analytics" },
-    { to: "/public-api", label: "API" },
-    { to: "/developer", label: "Developer" },
-    { to: "/enterprise", label: "Enterprise" },
     { to: "/integrations", label: "Integrations" },
-    { to: "/referrals", label: "Referrals" },
-    { to: "/rnr-summary", label: "R&R Summary" },
-    { to: "/help", label: "Help" },
-    { to: "/changelog", label: "Changelog", badge: "🆕" },
   ];
 
   const adminItems = [
@@ -55,9 +64,9 @@ export default function Navbar() {
     { to: "/admin/invite", label: "Send Invites" },
   ];
 
-  const settingsItems = [
-    { to: "/settings", label: "User Settings" },
-    { to: "/team", label: "Team Management" },
+  const profileItems = [
+    { to: "/settings", label: "Settings", icon: "⚙️" },
+    { to: "/logout", label: "Logout", icon: "🚪" },
   ];
 
   return (
@@ -78,27 +87,31 @@ export default function Navbar() {
                 </Badge>
               )}
               
-              {/* Main Navigation */}
-              {navigationItems.map((item) => (
+              {/* Main Navigation - Public or Logged-in */}
+              {(isLoggedInRoute ? loggedInNavigationItems : publicNavigationItems).map((item) => (
                 <Link
                   key={item.to}
                   to={item.to}
                   className="text-muted-foreground hover:text-foreground transition-colors relative"
                 >
                   {item.label}
-                  {item.badge && (
-                    <Badge className="absolute -top-2 -right-2 bg-primary text-primary-foreground text-xs px-1 py-0.5 rounded-full animate-pulse">
-                      {item.badge}
-                    </Badge>
-                  )}
                 </Link>
               ))}
+
+              {/* Login button for public pages */}
+              {!isLoggedInRoute && (
+                <Link to="/login">
+                  <Button variant="outline" size="sm">
+                    Login
+                  </Button>
+                </Link>
+              )}
             </div>
 
             {/* Right side items */}
             <div className="flex items-center space-x-2">
-              {/* Announcement Badge */}
-              {hasUnreadAnnouncement && (
+              {/* Announcement Badge - only for logged-in users */}
+              {isLoggedInRoute && hasUnreadAnnouncement && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -110,38 +123,60 @@ export default function Navbar() {
                 </Button>
               )}
 
-              <NotificationDropdown />
-              <ThemeToggle />
+              {/* Notifications - only for logged-in users */}
+              {isLoggedInRoute && <NotificationDropdown />}
 
-              {/* Desktop Dropdowns */}
-              <div className="hidden lg:flex items-center space-x-2">
-                {/* Admin Dropdown */}
-                {!loading && isAdmin && (
-                  <div className="relative group">
-                    <Button variant="ghost" className="text-muted-foreground hover:text-foreground">
-                      Admin ▼
-                    </Button>
-                    <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                      {adminItems.map((item) => (
-                        <Link
-                          key={item.to}
-                          to={item.to}
-                          className="block px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                        >
-                          {item.label}
-                        </Link>
-                      ))}
+              {/* Profile Dropdown - only for logged-in users */}
+              {isLoggedInRoute && (
+                <div className="relative">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center space-x-2"
+                  >
+                    <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground text-sm font-medium">
+                      U
                     </div>
-                  </div>
-                )}
+                    <span className="hidden md:block text-sm">User</span>
+                  </Button>
+                  
+                  {/* Profile Dropdown Menu */}
+                  {isProfileDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-md shadow-lg z-50">
+                      <div className="py-1">
+                        {profileItems.map((item) => (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            className="flex items-center px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                            onClick={() => setIsProfileDropdownOpen(false)}
+                          >
+                            <span className="mr-2">{item.icon}</span>
+                            {item.label}
+                          </Link>
+                        ))}
+                        <div className="border-t border-border my-1"></div>
+                        <div className="px-4 py-2">
+                          <ThemeToggle />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
-                {/* Settings Dropdown */}
+              {/* Theme Toggle - for public pages */}
+              {!isLoggedInRoute && <ThemeToggle />}
+
+              {/* Admin Dropdown - only for admin users */}
+              {isLoggedInRoute && !loading && isAdmin && (
                 <div className="relative group">
                   <Button variant="ghost" className="text-muted-foreground hover:text-foreground">
-                    Settings ▼
+                    Admin ▼
                   </Button>
                   <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                    {settingsItems.map((item) => (
+                    {adminItems.map((item) => (
                       <Link
                         key={item.to}
                         to={item.to}
@@ -152,7 +187,7 @@ export default function Navbar() {
                     ))}
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Mobile menu button */}
               <div className="lg:hidden">
@@ -205,7 +240,8 @@ export default function Navbar() {
                   </div>
                 )}
                 
-                {navigationItems.map((item) => (
+                {/* Main Navigation Items */}
+                {(isLoggedInRoute ? loggedInNavigationItems : publicNavigationItems).map((item) => (
                   <Link
                     key={item.to}
                     to={item.to}
@@ -213,16 +249,22 @@ export default function Navbar() {
                     onClick={closeMobileMenu}
                   >
                     <span className="flex-1">{item.label}</span>
-                    {item.badge && (
-                      <Badge className="bg-primary text-primary-foreground text-xs px-1 py-0.5 rounded-full animate-pulse">
-                        {item.badge}
-                      </Badge>
-                    )}
                   </Link>
                 ))}
 
-                {/* Admin Section */}
-                {!loading && isAdmin && (
+                {/* Login button for public pages */}
+                {!isLoggedInRoute && (
+                  <Link
+                    to="/login"
+                    className="flex items-center px-3 py-2 rounded-md text-base font-medium text-primary hover:bg-primary/10 transition-colors"
+                    onClick={closeMobileMenu}
+                  >
+                    <span className="flex-1">Login</span>
+                  </Link>
+                )}
+
+                {/* Admin Section - only for logged-in admin users */}
+                {isLoggedInRoute && !loading && isAdmin && (
                   <div className="border-t border-border pt-4 mt-4">
                     <div className="px-3 py-2 text-sm font-semibold text-muted-foreground">
                       Admin
@@ -240,25 +282,31 @@ export default function Navbar() {
                   </div>
                 )}
 
-                {/* Settings Section */}
-                <div className="border-t border-border pt-4 mt-4">
-                  <div className="px-3 py-2 text-sm font-semibold text-muted-foreground">
-                    Settings
+                {/* Profile Section - only for logged-in users */}
+                {isLoggedInRoute && (
+                  <div className="border-t border-border pt-4 mt-4">
+                    <div className="px-3 py-2 text-sm font-semibold text-muted-foreground">
+                      Profile
+                    </div>
+                    {profileItems.map((item) => (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        className="flex items-center px-6 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        onClick={closeMobileMenu}
+                      >
+                        <span className="mr-2">{item.icon}</span>
+                        {item.label}
+                      </Link>
+                    ))}
+                    <div className="px-6 py-2">
+                      <ThemeToggle />
+                    </div>
                   </div>
-                  {settingsItems.map((item) => (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      className="block px-6 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                      onClick={closeMobileMenu}
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
+                )}
 
-                {/* Mobile Announcement Badge */}
-                {hasUnreadAnnouncement && (
+                {/* Mobile Announcement Badge - only for logged-in users */}
+                {isLoggedInRoute && hasUnreadAnnouncement && (
                   <div className="border-t border-border pt-4 mt-4">
                     <button
                       onClick={() => {

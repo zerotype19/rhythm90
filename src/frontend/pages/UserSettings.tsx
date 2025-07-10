@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
-import PageLayout from "../components/PageLayout";
+import AppLayout from "../components/AppLayout";
 import Sidebar from "../components/Sidebar";
 
 export default function UserSettings() {
@@ -75,9 +75,9 @@ export default function UserSettings() {
 
   if (!user) {
     return (
-      <PageLayout maxWidth="4xl">
+      <AppLayout maxWidth="4xl" showFooter={false}>
         <div className="text-center py-20">Loading user settings...</div>
-      </PageLayout>
+      </AppLayout>
     );
   }
 
@@ -90,7 +90,7 @@ export default function UserSettings() {
   const providerInfo = providerMap[user.provider as keyof typeof providerMap] || { name: "Unknown", icon: "❓", color: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200" };
 
   return (
-    <PageLayout maxWidth="4xl" className="py-8">
+    <AppLayout maxWidth="4xl" className="py-8" showFooter={false}>
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Sidebar */}
         <div className="lg:w-64 lg:flex-shrink-0">
@@ -286,6 +286,6 @@ export default function UserSettings() {
           </Card>
         </div>
       </div>
-    </PageLayout>
+    </AppLayout>
   );
 } 

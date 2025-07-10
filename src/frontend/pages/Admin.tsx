@@ -6,7 +6,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
 import { updateTeamMemberRole, fetchTeamMembersWithRoles } from "../utils/api";
-import PageLayout from "../components/PageLayout";
+import AppLayout from "../components/AppLayout";
 import Sidebar from "../components/Sidebar";
 
 export default function Admin() {
@@ -176,14 +176,14 @@ export default function Admin() {
 
   if (loading) {
     return (
-      <PageLayout maxWidth="7xl">
+      <AppLayout maxWidth="7xl" showFooter={false}>
         <div className="text-center py-20">Loading admin data...</div>
-      </PageLayout>
+      </AppLayout>
     );
   }
 
   return (
-    <PageLayout maxWidth="7xl" className="py-8">
+    <AppLayout maxWidth="7xl" className="py-8" showFooter={false}>
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Sidebar */}
         <div className="lg:w-64 lg:flex-shrink-0">
@@ -546,6 +546,6 @@ export default function Admin() {
           )}
         </div>
       </div>
-    </PageLayout>
+    </AppLayout>
   );
 } 

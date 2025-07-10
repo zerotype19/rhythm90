@@ -5,7 +5,7 @@ import { Badge } from "../components/ui/badge";
 import Loading from "../components/Loading";
 import OnboardingSidebar from "../components/OnboardingSidebar";
 import AiAssistantPanel from "../components/AiAssistantPanel";
-import PageLayout from "../components/PageLayout";
+import AppLayout from "../components/AppLayout";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ playCount: 0, signalCount: 0 });
@@ -33,7 +33,7 @@ export default function Dashboard() {
   if (loading) return <Loading />;
 
   return (
-    <PageLayout maxWidth="7xl" className="py-8">
+    <AppLayout maxWidth="7xl" className="py-8" showFooter={false}>
       <OnboardingSidebar />
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
@@ -123,6 +123,6 @@ export default function Dashboard() {
       <div className="flex justify-center">
         <AiAssistantPanel />
       </div>
-    </PageLayout>
+    </AppLayout>
   );
 } 

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
-import PageLayout from "../components/PageLayout";
+import { Input } from "../components/ui/input";
+import AppLayout from "../components/AppLayout";
 import Sidebar from "../components/Sidebar";
 
 export default function Developer() {
@@ -103,7 +103,7 @@ export default function Developer() {
   };
 
   return (
-    <PageLayout maxWidth="7xl" className="py-8">
+    <AppLayout maxWidth="7xl" className="py-8" showFooter={false}>
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Sidebar */}
         <div className="lg:w-64 lg:flex-shrink-0">
@@ -338,6 +338,6 @@ export default function Developer() {
           </Card>
         </div>
       </div>
-    </PageLayout>
+    </AppLayout>
   );
 } 
