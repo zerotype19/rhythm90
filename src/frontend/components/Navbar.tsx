@@ -8,6 +8,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { useAnnouncements } from "../hooks/useAnnouncements";
 import AnnouncementModal from "./AnnouncementModal";
+import { cn } from "../lib/utils";
 
 export default function Navbar() {
   const { isAdmin, loading } = useAdmin();
@@ -15,10 +16,6 @@ export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const { hasUnreadAnnouncement, latestAnnouncement, markAsRead } = useAnnouncements();
-
-  const toggleMobileMenu = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
-  };
 
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
@@ -65,20 +62,20 @@ export default function Navbar() {
 
   return (
     <>
-      <nav className="bg-rhythmBlack text-rhythmWhite sticky top-0 z-50">
-        <div className="container mx-auto px-4">
+      <nav className="bg-background border-b border-border sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
-            <Link to="/" className="text-2xl font-bold" onClick={closeMobileMenu}>
+            <Link to="/" className="text-2xl font-bold text-foreground" onClick={closeMobileMenu}>
               Rhythm90.io
             </Link>
 
             {/* Desktop Navigation */}
-            <div className="hidden lg:flex items-center space-x-4">
+            <div className="hidden lg:flex items-center space-x-6">
               {isDemoMode && (
-                <span className="bg-yellow-500 text-yellow-900 px-2 py-1 rounded text-xs font-semibold">
+                <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
                   DEMO MODE
-                </span>
+                </Badge>
               )}
               
               {/* Main Navigation */}
@@ -86,175 +83,201 @@ export default function Navbar() {
                 <Link
                   key={item.to}
                   to={item.to}
-                  className="hover:text-rhythmRed transition-colors relative"
+                  className="text-muted-foreground hover:text-foreground transition-colors relative"
                 >
                   {item.label}
                   {item.badge && (
-                    <Badge className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-1 py-0.5 rounded-full animate-pulse">
+                    <Badge className="absolute -top-2 -right-2 bg-primary text-primary-foreground text-xs px-1 py-0.5 rounded-full animate-pulse">
                       {item.badge}
                     </Badge>
                   )}
                 </Link>
               ))}
+            </div>
 
-              {/* Admin Dropdown */}
-              {!loading && isAdmin && (
+            {/* Right side items */}
+            <div className="flex items-center space-x-2">
+              {/* Announcement Badge */}
+              {hasUnreadAnnouncement && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAnnouncementClick}
+                  className="relative p-2 hover:bg-muted rounded-full transition-all"
+                >
+                  <span className="text-lg">🎉</span>
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                </Button>
+              )}
+
+              <NotificationDropdown />
+              <ThemeToggle />
+
+              {/* Desktop Dropdowns */}
+              <div className="hidden lg:flex items-center space-x-2">
+                {/* Admin Dropdown */}
+                {!loading && isAdmin && (
+                  <div className="relative group">
+                    <Button variant="ghost" className="text-muted-foreground hover:text-foreground">
+                      Admin ▼
+                    </Button>
+                    <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                      {adminItems.map((item) => (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className="block px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                        >
+                          {item.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Settings Dropdown */}
                 <div className="relative group">
-                  <button className="hover:text-rhythmRed transition-colors">
-                    Admin ▼
-                  </button>
-                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                    {adminItems.map((item) => (
+                  <Button variant="ghost" className="text-muted-foreground hover:text-foreground">
+                    Settings ▼
+                  </Button>
+                  <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                    {settingsItems.map((item) => (
                       <Link
                         key={item.to}
                         to={item.to}
-                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="block px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
                       >
                         {item.label}
                       </Link>
                     ))}
                   </div>
                 </div>
-              )}
+              </div>
 
-              {/* Settings Dropdown */}
-              <div className="relative group">
-                <button className="hover:text-rhythmRed transition-colors">
-                  Settings ▼
-                </button>
-                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              {/* Mobile menu button */}
+              <div className="lg:hidden">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                  className="text-foreground"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Mobile Slide-out Navigation */}
+      <div className={cn(
+        "fixed inset-0 z-50 lg:hidden",
+        isMobileMenuOpen ? "block" : "hidden"
+      )}>
+        {/* Backdrop */}
+        <div 
+          className="absolute inset-0 bg-black bg-opacity-50"
+          onClick={closeMobileMenu}
+        />
+        
+        {/* Slide-out Menu */}
+        <div className="absolute left-0 top-0 h-full w-80 max-w-[80vw] bg-background border-r border-border shadow-xl transform transition-transform duration-300 ease-in-out">
+          <div className="flex flex-col h-full">
+            {/* Mobile Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-foreground">Menu</h2>
+              <Button variant="ghost" size="sm" onClick={closeMobileMenu}>
+                ✕
+              </Button>
+            </div>
+
+            {/* Mobile Navigation */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4 space-y-1">
+                {isDemoMode && (
+                  <div className="px-3 py-2 mb-4">
+                    <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                      DEMO MODE
+                    </Badge>
+                  </div>
+                )}
+                
+                {navigationItems.map((item) => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className="flex items-center px-3 py-2 rounded-md text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    onClick={closeMobileMenu}
+                  >
+                    <span className="flex-1">{item.label}</span>
+                    {item.badge && (
+                      <Badge className="bg-primary text-primary-foreground text-xs px-1 py-0.5 rounded-full animate-pulse">
+                        {item.badge}
+                      </Badge>
+                    )}
+                  </Link>
+                ))}
+
+                {/* Admin Section */}
+                {!loading && isAdmin && (
+                  <div className="border-t border-border pt-4 mt-4">
+                    <div className="px-3 py-2 text-sm font-semibold text-muted-foreground">
+                      Admin
+                    </div>
+                    {adminItems.map((item) => (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        className="block px-6 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        onClick={closeMobileMenu}
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
+                {/* Settings Section */}
+                <div className="border-t border-border pt-4 mt-4">
+                  <div className="px-3 py-2 text-sm font-semibold text-muted-foreground">
+                    Settings
+                  </div>
                   {settingsItems.map((item) => (
                     <Link
                       key={item.to}
                       to={item.to}
-                      className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
-              {/* Right side items */}
-              <div className="flex items-center space-x-2">
-                {/* Announcement Badge */}
-                {hasUnreadAnnouncement && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleAnnouncementClick}
-                    className="relative p-2 hover:bg-gray-800 rounded-full transition-all"
-                  >
-                    <span className="text-lg">🎉</span>
-                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                  </Button>
-                )}
-
-                <NotificationDropdown />
-                <ThemeToggle />
-              </div>
-            </div>
-
-            {/* Mobile menu button */}
-            <div className="lg:hidden">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleMobileMenu}
-                className="text-white"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Navigation */}
-        {isMobileMenuOpen && (
-          <div className="lg:hidden border-t border-gray-700">
-            <div className="px-2 pt-2 pb-3 space-y-1">
-              {isDemoMode && (
-                <div className="px-3 py-2">
-                  <span className="bg-yellow-500 text-yellow-900 px-2 py-1 rounded text-xs font-semibold">
-                    DEMO MODE
-                  </span>
-                </div>
-              )}
-              
-              {navigationItems.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className="block px-3 py-2 rounded-md text-base font-medium hover:text-rhythmRed hover:bg-gray-800 transition-colors"
-                  onClick={closeMobileMenu}
-                >
-                  {item.label}
-                  {item.badge && (
-                    <Badge className="ml-2 bg-red-500 text-white text-xs px-1 py-0.5 rounded-full animate-pulse">
-                      {item.badge}
-                    </Badge>
-                  )}
-                </Link>
-              ))}
-
-              {/* Admin Section */}
-              {!loading && isAdmin && (
-                <div className="border-t border-gray-700 pt-2 mt-2">
-                  <div className="px-3 py-2 text-sm font-semibold text-gray-400">
-                    Admin
-                  </div>
-                  {adminItems.map((item) => (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      className="block px-6 py-2 text-sm hover:text-rhythmRed hover:bg-gray-800 transition-colors"
+                      className="block px-6 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                       onClick={closeMobileMenu}
                     >
                       {item.label}
                     </Link>
                   ))}
                 </div>
-              )}
 
-              {/* Settings Section */}
-              <div className="border-t border-gray-700 pt-2 mt-2">
-                <div className="px-3 py-2 text-sm font-semibold text-gray-400">
-                  Settings
-                </div>
-                {settingsItems.map((item) => (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className="block px-6 py-2 text-sm hover:text-rhythmRed hover:bg-gray-800 transition-colors"
-                    onClick={closeMobileMenu}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
+                {/* Mobile Announcement Badge */}
+                {hasUnreadAnnouncement && (
+                  <div className="border-t border-border pt-4 mt-4">
+                    <button
+                      onClick={() => {
+                        handleAnnouncementClick();
+                        closeMobileMenu();
+                      }}
+                      className="flex items-center px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors w-full"
+                    >
+                      <span className="mr-2">🎉</span>
+                      What's New
+                      <div className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                    </button>
+                  </div>
+                )}
               </div>
-
-              {/* Mobile Announcement Badge */}
-              {hasUnreadAnnouncement && (
-                <div className="border-t border-gray-700 pt-2 mt-2">
-                  <button
-                    onClick={() => {
-                      handleAnnouncementClick();
-                      closeMobileMenu();
-                    }}
-                    className="flex items-center px-3 py-2 text-sm hover:text-rhythmRed hover:bg-gray-800 transition-colors w-full"
-                  >
-                    <span className="mr-2">🎉</span>
-                    What's New
-                    <div className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                  </button>
-                </div>
-              )}
             </div>
           </div>
-        )}
-      </nav>
+        </div>
+      </div>
 
       {/* Announcement Modal */}
       <AnnouncementModal

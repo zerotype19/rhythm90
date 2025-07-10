@@ -5,6 +5,7 @@ import { Badge } from "../components/ui/badge";
 import Loading from "../components/Loading";
 import OnboardingSidebar from "../components/OnboardingSidebar";
 import AiAssistantPanel from "../components/AiAssistantPanel";
+import PageLayout from "../components/PageLayout";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ playCount: 0, signalCount: 0 });
@@ -32,10 +33,10 @@ export default function Dashboard() {
   if (loading) return <Loading />;
 
   return (
-    <div className="max-w-6xl mx-auto p-8 space-y-6">
+    <PageLayout maxWidth="7xl" className="py-8">
       <OnboardingSidebar />
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-rhythmBlack dark:text-white">Dashboard</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
         {user?.is_premium && (
           <Badge className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white">
             ⭐ Premium
@@ -43,7 +44,8 @@ export default function Dashboard() {
         )}
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Stats Cards - Mobile responsive grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         <Card className="transition-all hover:shadow-lg hover:scale-[1.02]">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -56,14 +58,14 @@ export default function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-rhythmBlack dark:text-white">{stats.playCount}</p>
+            <p className="text-3xl font-bold text-foreground">{stats.playCount}</p>
           </CardContent>
         </Card>
 
         <Card className="transition-all hover:shadow-lg hover:scale-[1.02]">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Logged Signals</span>
+              <span>Signals Logged</span>
               <div className="p-3 bg-green-100 dark:bg-green-900 rounded-full">
                 <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -72,28 +74,46 @@ export default function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-rhythmBlack dark:text-white">{stats.signalCount}</p>
+            <p className="text-3xl font-bold text-foreground">{stats.signalCount}</p>
+          </CardContent>
+        </Card>
+
+        <Card className="transition-all hover:shadow-lg hover:scale-[1.02] sm:col-span-2 lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Team Activity</span>
+              <div className="p-3 bg-purple-100 dark:bg-purple-900 rounded-full">
+                <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                </svg>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-foreground">Active</p>
+            <p className="text-sm text-muted-foreground">Team is engaged</p>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="transition-all hover:shadow-lg">
+      {/* Quick Actions - Mobile responsive grid */}
+      <Card className="transition-all hover:shadow-lg mb-8">
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-all hover:scale-105">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="text-center p-4 border border-border rounded-lg hover:bg-muted cursor-pointer transition-all hover:scale-105">
               <div className="text-2xl mb-2">📊</div>
-              <p className="font-medium dark:text-white">View Plays</p>
+              <p className="font-medium text-foreground">View Plays</p>
             </div>
-            <div className="text-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-all hover:scale-105">
+            <div className="text-center p-4 border border-border rounded-lg hover:bg-muted cursor-pointer transition-all hover:scale-105">
               <div className="text-2xl mb-2">📝</div>
-              <p className="font-medium dark:text-white">Log Signal</p>
+              <p className="font-medium text-foreground">Log Signal</p>
             </div>
-            <div className="text-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-all hover:scale-105">
+            <div className="text-center p-4 border border-border rounded-lg hover:bg-muted cursor-pointer transition-all hover:scale-105 sm:col-span-2 lg:col-span-1">
               <div className="text-2xl mb-2">👥</div>
-              <p className="font-medium dark:text-white">Team Settings</p>
+              <p className="font-medium text-foreground">Team Settings</p>
             </div>
           </div>
         </CardContent>
@@ -103,6 +123,6 @@ export default function Dashboard() {
       <div className="flex justify-center">
         <AiAssistantPanel />
       </div>
-    </div>
+    </PageLayout>
   );
 } 

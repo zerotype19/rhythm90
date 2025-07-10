@@ -1,111 +1,20 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { Input } from "../components/ui/input";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
-import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
-import { Link } from "react-router-dom";
-import { fetchTeamMembersWithRoles, updateTeamMemberRole, removeTeamMemberFromTeam } from "../utils/api";
-import { fetchSlackSettings } from "../utils/api";
-import { sendNotification } from "../utils/api";
-import { fetchApiKeys, createApiKey, revokeApiKey, fetchWorkshopNotificationSettings, updateWorkshopNotificationSettings, exportAuditLog, exportAnalytics } from "../utils/api";
-import GrowthDashboard from "../components/GrowthDashboard";
-
-interface Team {
-  id: string;
-  name: string;
-  billing_status: string;
-  stripe_customer_id?: string;
-}
-
-interface Invite {
-  id: string;
-  email: string;
-  created_at: string;
-  expires_at: string;
-  invited_by_name?: string;
-}
-
-interface InvitesData {
-  activeInvites: Invite[];
-  expiredInvites: Invite[];
-  totalActive: number;
-  totalExpired: number;
-}
-
-interface AdminData {
-  teams: Team[];
-  totalUsers: number;
-  premiumUsers: number;
-}
-
-interface AdminStats {
-  totalUsers: number;
-  premiumUsers: number;
-  activeUsers: number;
-  conversionRate: string;
-  mrr: string;
-  lastUpdated: string;
-}
-
-interface AuditLogEntry {
-  id: string;
-  action_type: string;
-  target_type: string;
-  target_id: string;
-  details: string;
-  created_at: string;
-  admin_name: string;
-  admin_email: string;
-}
-
-interface ApiKey {
-  id: string;
-  name: string;
-  created_at: string;
-  last_used_at: string | null;
-  is_active: boolean;
-}
-
-interface WorkshopNotificationSettings {
-  slack_enabled: boolean;
-  notify_goals_completed: boolean;
-  notify_plays_selected: boolean;
-  notify_workshop_completed: boolean;
-}
+import { updateTeamMemberRole, fetchTeamMembersWithRoles } from "../utils/api";
+import PageLayout from "../components/PageLayout";
+import Sidebar from "../components/Sidebar";
 
 export default function Admin() {
-  const [adminData, setAdminData] = useState<AdminData | null>(null);
-  const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
-  const [invites, setInvites] = useState<InvitesData>({ activeInvites: [], expiredInvites: [], totalActive: 0, totalExpired: 0 });
-  const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+  const [adminData, setAdminData] = useState<any>(null);
+  const [adminStats, setAdminStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [updatingFlags, setUpdatingFlags] = useState<string | null>(null);
-  const [cancelingInvite, setCancelingInvite] = useState<string | null>(null);
-  const [resendingInvite, setResendingInvite] = useState<string | null>(null);
-  const [expiringInvite, setExpiringInvite] = useState<string | null>(null);
-  const [invitingUser, setInvitingUser] = useState(false);
-  const [inviteForm, setInviteForm] = useState({ email: "", role: "member" });
-  const [generatedInviteLink, setGeneratedInviteLink] = useState<string | null>(null);
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [creatingApiKey, setCreatingApiKey] = useState(false);
-  const [newApiKeyName, setNewApiKeyName] = useState("");
-  const [newApiKey, setNewApiKey] = useState<string | null>(null);
-  const [workshopSettings, setWorkshopSettings] = useState<WorkshopNotificationSettings>({
-    slack_enabled: true,
-    notify_goals_completed: true,
-    notify_plays_selected: true,
-    notify_workshop_completed: true
-  });
-  const [updatingWorkshopSettings, setUpdatingWorkshopSettings] = useState(false);
-  const [exportingAuditLog, setExportingAuditLog] = useState(false);
-  const [exportingAnalytics, setExportingAnalytics] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
-  const [exportDateRange, setExportDateRange] = useState('30d');
-  const [customStartDate, setCustomStartDate] = useState('');
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+  const [removingUser, setRemovingUser] = useState<string | null>(null);
   const [customEndDate, setCustomEndDate] = useState('');
   const { flags: featureFlags, isFeatureEnabled } = useFeatureFlags();
   const [experimentMetrics, setExperimentMetrics] = useState<any[]>([]);
@@ -120,6 +29,14 @@ export default function Admin() {
     active: true
   });
   const [showPreview, setShowPreview] = useState(false);
+
+  const adminSidebarItems = [
+    { to: "/admin", label: "Overview", icon: "📊" },
+    { to: "/admin/invite", label: "Send Invites", icon: "📧" },
+    { to: "/admin/teams", label: "Team Management", icon: "👥" },
+    { to: "/admin/billing", label: "Billing", icon: "💳" },
+    { to: "/admin/analytics", label: "Analytics", icon: "📈" },
+  ];
 
   useEffect(() => {
     load();
@@ -140,54 +57,15 @@ export default function Admin() {
 
   async function load() {
     try {
-      // Load admin data
-      const adminRes = await fetch(`${import.meta.env.VITE_API_URL}/admin`);
-      if (adminRes.ok) {
-        const adminData = await adminRes.json();
-        setAdminData(adminData);
-      }
-
-      // Load admin stats
-      const statsRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/stats`);
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-        setAdminStats(statsData);
-      }
-
-      // Load invites
-      const invitesRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites`);
-      if (invitesRes.ok) {
-        const invitesData = await invitesRes.json();
-        setInvites(invitesData);
-      }
-
-      // Load audit log
-      const auditRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/audit-log`);
-      if (auditRes.ok) {
-        const auditData = await auditRes.json();
-        setAuditLog(auditData.auditLog || []);
-      }
-
-      // Load API keys
-      try {
-        const apiKeysData = await fetchApiKeys();
-        setApiKeys(apiKeysData.apiKeys || []);
-      } catch (error) {
-        console.error("Failed to load API keys:", error);
-      }
-
-      // Load workshop notification settings
-      try {
-        const settingsData = await fetchWorkshopNotificationSettings();
-        if (settingsData.settings) {
-          setWorkshopSettings(settingsData.settings);
-        }
-      } catch (error) {
-        console.error("Failed to load workshop settings:", error);
-      }
+      const [adminResult, statsResult] = await Promise.all([
+        fetch(`${import.meta.env.VITE_API_URL}/admin/teams`).then(res => res.json()),
+        fetch(`${import.meta.env.VITE_API_URL}/admin/stats`).then(res => res.json())
+      ]);
+      
+      setAdminData(adminResult);
+      setAdminStats(statsResult);
     } catch (error) {
       console.error("Failed to load admin data:", error);
-      setError("Failed to load admin data");
     } finally {
       setLoading(false);
     }
@@ -276,1958 +154,398 @@ export default function Admin() {
   };
 
   async function toggleFeatureFlag(key: string, currentValue: boolean) {
-    setUpdatingFlags(key);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/feature-flags`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, enabled: !currentValue }),
+        body: JSON.stringify({
+          teamId: "team-123", // Demo team
+          flagName: key,
+          isEnabled: !currentValue
+        })
       });
-
-      if (!res.ok) {
-        throw new Error("Failed to update feature flag");
+      
+      if (res.ok) {
+        // Refresh the page to show updated flags
+        window.location.reload();
       }
-
-      // Track the feature flag toggle event
-      trackEvent(AnalyticsEvents.FEATURE_TOGGLED, { 
-        feature: key, 
-        newValue: !currentValue 
-      });
-
-      // Refresh the page to show updated flags
-      window.location.reload();
     } catch (error) {
       console.error("Failed to toggle feature flag:", error);
-      alert("Failed to update feature flag. Please try again.");
-    } finally {
-      setUpdatingFlags(null);
-    }
-  }
-
-  async function cancelInvite(inviteId: string) {
-    setCancelingInvite(inviteId);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites/cancel`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invite_id: inviteId }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to cancel invite");
-      }
-
-      // Remove invite from state
-      setInvites(prev => ({
-        ...prev,
-        activeInvites: prev.activeInvites.filter(invite => invite.id !== inviteId),
-        totalActive: prev.totalActive - 1
-      }));
-    } catch (error) {
-      console.error("Failed to cancel invite:", error);
-      alert("Failed to cancel invite. Please try again.");
-    } finally {
-      setCancelingInvite(null);
-    }
-  }
-
-  async function resendInvite(inviteId: string) {
-    setResendingInvite(inviteId);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites/resend`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invite_id: inviteId }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to resend invite");
-      }
-
-      const data = await res.json();
-      if (data.success && data.inviteLink) {
-        // Copy link to clipboard
-        navigator.clipboard.writeText(data.inviteLink);
-        alert("New invite link copied to clipboard!");
-      }
-    } catch (error) {
-      console.error("Failed to resend invite:", error);
-      alert("Failed to resend invite. Please try again.");
-    } finally {
-      setResendingInvite(null);
-    }
-  }
-
-  async function expireInvite(inviteId: string) {
-    setExpiringInvite(inviteId);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites/expire`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invite_id: inviteId }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to expire invite");
-      }
-
-      // Move invite from active to expired
-      const inviteToMove = invites.activeInvites.find(invite => invite.id === inviteId);
-      if (inviteToMove) {
-        setInvites(prev => ({
-          ...prev,
-          activeInvites: prev.activeInvites.filter(invite => invite.id !== inviteId),
-          expiredInvites: [inviteToMove, ...prev.expiredInvites],
-          totalActive: prev.totalActive - 1,
-          totalExpired: prev.totalExpired + 1
-        }));
-      }
-    } catch (error) {
-      console.error("Failed to expire invite:", error);
-      alert("Failed to expire invite. Please try again.");
-    } finally {
-      setExpiringInvite(null);
-    }
-  }
-
-  async function inviteUser(e: React.FormEvent) {
-    e.preventDefault();
-    if (!inviteForm.email.trim() || !inviteForm.role) return;
-
-    setInvitingUser(true);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/invite-user`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(inviteForm),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to invite user");
-      }
-
-      const data = await res.json();
-      if (data.success && data.inviteLink) {
-        setGeneratedInviteLink(data.inviteLink);
-        setInviteForm({ email: "", role: "member" });
-        // Reload invites to show the new one
-        const invitesRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites`);
-        if (invitesRes.ok) {
-          const invitesData = await invitesRes.json();
-          setInvites(invitesData);
-        }
-        // Reload audit log
-        const auditRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/audit-log`);
-        if (auditRes.ok) {
-          const auditData = await auditRes.json();
-          setAuditLog(auditData.auditLog || []);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to invite user:", error);
-      alert("Failed to invite user. Please try again.");
-    } finally {
-      setInvitingUser(false);
-    }
-  }
-
-  function copyInviteLink() {
-    if (generatedInviteLink) {
-      navigator.clipboard.writeText(generatedInviteLink);
-      alert("Invite link copied to clipboard!");
-      setGeneratedInviteLink(null);
-    }
-  }
-
-  async function handleCreateApiKey(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newApiKeyName.trim()) return;
-
-    setCreatingApiKey(true);
-    try {
-      const result = await createApiKey(newApiKeyName);
-      if (result.success) {
-        setNewApiKey(result.apiKey);
-        setNewApiKeyName("");
-        load(); // Refresh API keys list
-      }
-    } catch (error) {
-      console.error("Failed to create API key:", error);
-      alert("Failed to create API key. Please try again.");
-    } finally {
-      setCreatingApiKey(false);
-    }
-  }
-
-  async function handleRevokeApiKey(keyId: string) {
-    if (!confirm("Are you sure you want to revoke this API key? This action cannot be undone.")) {
-      return;
-    }
-
-    try {
-      await revokeApiKey(keyId);
-      load(); // Refresh API keys list
-    } catch (error) {
-      console.error("Failed to revoke API key:", error);
-      alert("Failed to revoke API key. Please try again.");
-    }
-  }
-
-  async function handleUpdateWorkshopSettings() {
-    setUpdatingWorkshopSettings(true);
-    try {
-      await updateWorkshopNotificationSettings(workshopSettings);
-      alert("Workshop notification settings updated successfully!");
-    } catch (error) {
-      console.error("Failed to update workshop settings:", error);
-      alert("Failed to update workshop settings. Please try again.");
-    } finally {
-      setUpdatingWorkshopSettings(false);
-    }
-  }
-
-  async function handleExportAuditLog() {
-    setExportingAuditLog(true);
-    try {
-      let startDate, endDate;
-      
-      if (exportDateRange === 'custom') {
-        startDate = customStartDate;
-        endDate = customEndDate;
-      } else {
-        const days = exportDateRange === '7d' ? 7 : 30;
-        endDate = new Date().toISOString().split('T')[0];
-        startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      }
-
-      const { blob, filename } = await exportAuditLog(exportFormat, startDate, endDate);
-      
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      alert(`Audit log exported successfully as ${filename}`);
-    } catch (error) {
-      console.error("Failed to export audit log:", error);
-      alert("Failed to export audit log. Please try again.");
-    } finally {
-      setExportingAuditLog(false);
-    }
-  }
-
-  async function handleExportAnalytics() {
-    setExportingAnalytics(true);
-    try {
-      let startDate, endDate;
-      
-      if (exportDateRange === 'custom') {
-        startDate = customStartDate;
-        endDate = customEndDate;
-      } else {
-        const days = exportDateRange === '7d' ? 7 : 30;
-        endDate = new Date().toISOString().split('T')[0];
-        startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      }
-
-      const { blob, filename } = await exportAnalytics(exportFormat, startDate, endDate);
-      
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      alert(`Analytics exported successfully as ${filename}`);
-    } catch (error) {
-      console.error("Failed to export analytics:", error);
-      alert("Failed to export analytics. Please try again.");
-    } finally {
-      setExportingAnalytics(false);
     }
   }
 
   if (loading) {
     return (
-      <div className="p-8">
-        <div className="text-center">Loading admin dashboard...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-8">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-red-600">Access Denied</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600">{error}</p>
-            <Link to="/" className="inline-block mt-4">
-              <Button>Return to Dashboard</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
+      <PageLayout maxWidth="7xl">
+        <div className="text-center py-20">Loading admin data...</div>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-        <Link to="/admin/invite">
-          <Button>Send Beta Invite</Button>
-        </Link>
-      </div>
+    <PageLayout maxWidth="7xl" className="py-8">
+      <div className="flex flex-col lg:flex-row gap-8">
+        {/* Sidebar */}
+        <div className="lg:w-64 lg:flex-shrink-0">
+          <Sidebar items={adminSidebarItems} title="Admin" className="bg-card border rounded-lg" />
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Teams</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{adminData?.teams.length || 0}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Users</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{adminStats?.totalUsers || 0}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Active Users</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{adminStats?.activeUsers || 0}</p>
-            <p className="text-sm text-gray-500">Last 7 days</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Conversion Rate</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{adminStats?.conversionRate || "0%"}</p>
-            <p className="text-sm text-gray-500">Free to Premium</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>MRR</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{adminStats?.mrr || "$0"}</p>
-            <p className="text-sm text-gray-500">Monthly Recurring</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {adminData?.teams.map((team) => (
-          <Card key={team.id}>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                {team.name}
-                <Badge variant={team.billing_status === "active" ? "default" : "secondary"}>
-                  {team.billing_status}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Team ID: {team.id}
-              </p>
-              {team.stripe_customer_id && (
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Stripe: {team.stripe_customer_id}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Pending Invites Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Pending Invites ({invites.activeInvites.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {invites.activeInvites.length === 0 ? (
-            <p className="text-gray-500">No pending invites.</p>
-          ) : (
-            <div className="space-y-3">
-              {invites.activeInvites.map((invite) => (
-                <div key={invite.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h3 className="font-semibold">{invite.email}</h3>
-                      <p className="text-sm text-gray-500">
-                        Invited: {new Date(invite.created_at).toLocaleDateString()}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Expires: {new Date(invite.expires_at).toLocaleDateString()}
-                      </p>
-                      {invite.invited_by_name && (
-                        <p className="text-xs text-gray-400">
-                          By: {invite.invited_by_name}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => cancelInvite(invite.id)}
-                        disabled={cancelingInvite === invite.id}
-                      >
-                        {cancelingInvite === invite.id ? "Canceling..." : "Cancel"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => resendInvite(invite.id)}
-                        disabled={resendingInvite === invite.id}
-                      >
-                        {resendingInvite === invite.id ? "Resending..." : "Resend"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => expireInvite(invite.id)}
-                        disabled={expiringInvite === invite.id}
-                      >
-                        {expiringInvite === invite.id ? "Expiring..." : "Expire"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Expired Invites Section */}
-      {invites.expiredInvites.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Expired Invites ({invites.expiredInvites.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {invites.expiredInvites.map((invite) => (
-                <div key={invite.id} className="border rounded-lg p-4 bg-gray-100 dark:bg-gray-900 opacity-75">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-600 dark:text-gray-400">{invite.email}</h3>
-                      <p className="text-sm text-gray-500">
-                        Invited: {new Date(invite.created_at).toLocaleDateString()}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Expired: {new Date(invite.expires_at).toLocaleDateString()}
-                      </p>
-                      {invite.invited_by_name && (
-                        <p className="text-xs text-gray-400">
-                          By: {invite.invited_by_name}
-                        </p>
-                      )}
-                    </div>
-                    <Badge variant="secondary" className="text-xs">
-                      Expired
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Feature Flags Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Feature Flags</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {Object.entries(featureFlags).map(([key, enabled]) => (
-              <div key={key} className="flex items-center justify-between p-3 border rounded-lg">
-                <div>
-                  <h4 className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</h4>
-                  <p className="text-sm text-gray-500">
-                    {enabled ? "Enabled" : "Disabled"}
-                  </p>
-                </div>
-                <Button
-                  variant={enabled ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => toggleFeatureFlag(key, enabled)}
-                  disabled={updatingFlags === key}
-                >
-                  {updatingFlags === key ? "Updating..." : enabled ? "Disable" : "Enable"}
-                </Button>
-              </div>
-            ))}
+        {/* Main Content */}
+        <div className="flex-1 space-y-8">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <h1 className="text-3xl font-bold text-foreground">Admin Dashboard</h1>
+            <Link to="/admin/invite">
+              <Button>Send Beta Invite</Button>
+            </Link>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Invite User Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Invite New User</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={inviteUser} className="space-y-4">
-            <div>
-              <label htmlFor="inviteEmail" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Email Address
-              </label>
-              <Input
-                id="inviteEmail"
-                type="email"
-                value={inviteForm.email}
-                onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-                required
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <label htmlFor="inviteRole" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Role
-              </label>
-              <select
-                id="inviteRole"
-                value={inviteForm.role}
-                onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              >
-                <option value="member">Member</option>
-                <option value="analyst">Analyst</option>
-                <option value="admin">Admin</option>
-                <option value="viewer">Viewer</option>
-              </select>
-            </div>
-            <Button type="submit" disabled={invitingUser}>
-              {invitingUser ? "Inviting..." : "Send Invite"}
-            </Button>
-            {generatedInviteLink && (
-              <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900 rounded-md">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  Invite link: <span className="font-mono text-blue-600 dark:text-blue-400">{generatedInviteLink}</span>
-                </p>
-                <Button variant="outline" size="sm" onClick={copyInviteLink} className="mt-2">
-                  Copy Link
-                </Button>
-              </div>
-            )}
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Audit Log Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Audit Log</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead>Details</TableHead>
-                  <TableHead>Admin</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {auditLog.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>{new Date(entry.created_at).toLocaleString()}</TableCell>
-                    <TableCell>{entry.action_type}</TableCell>
-                    <TableCell>{entry.target_type}</TableCell>
-                    <TableCell>{entry.details}</TableCell>
-                    <TableCell>{`${entry.admin_name} (${entry.admin_email})`}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Team Role Management Section */}
-      <TeamRoleManagement />
-
-      {/* API Key Management Section */}
-      <ApiKeyManagementSection />
-
-      {/* Workshop Notification Settings Section */}
-      <WorkshopNotificationSettingsSection />
-
-      {/* Slack Integration Section */}
-      <SlackIntegrationSection />
-
-      {/* Enterprise Features Section */}
-      <EnterpriseFeaturesSection />
-
-      {/* Growth Dashboard Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>📈 Growth Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <GrowthDashboard />
-        </CardContent>
-      </Card>
-
-      {/* Notification Sending Section */}
-      <NotificationSendingSection />
-
-      {/* Subscription Management Section */}
-      <SubscriptionManagementSection />
-
-      {/* Experiment Metrics Dashboard */}
-      <div className="my-8">
-        <h2 className="text-2xl font-bold mb-4">Experiment Metrics</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white dark:bg-gray-900 border rounded">
-            <thead>
-              <tr>
-                <th className="px-4 py-2">Experiment</th>
-                <th className="px-4 py-2">Variant</th>
-                <th className="px-4 py-2">Exposures</th>
-                <th className="px-4 py-2">Engagements</th>
-                <th className="px-4 py-2">Conversions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {experimentMetrics.map((row, idx) => (
-                <tr key={idx}>
-                  <td className="px-4 py-2">{row.name}</td>
-                  <td className="px-4 py-2">{row.variant}</td>
-                  <td className="px-4 py-2">{row.exposures}</td>
-                  <td className="px-4 py-2">{row.engagements}</td>
-                  <td className="px-4 py-2">{row.conversions}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {/* Experiment Preview Section */}
-      <div className="my-8">
-        <h2 className="text-2xl font-bold mb-4">Experiment Variant Preview</h2>
-        <div className="flex flex-wrap gap-6">
-          {/* Example: Preview for landing_cta experiment */}
-          {["A", "B", "C"].map((variant) => (
-            <div key={variant} className="border rounded p-4 min-w-[250px] bg-gray-50 dark:bg-gray-800">
-              <h3 className="font-semibold mb-2">Landing CTA Variant {variant}</h3>
-              <div className="mb-2">
-                <span className="font-medium">Headline: </span>
-                {variant === "B" ? "Ready to Supercharge Your Team?" : variant === "C" ? "Get Started with Rhythm90" : "Ready to Transform Your Marketing Operations?"}
-              </div>
-              <div className="mb-2">
-                <span className="font-medium">Primary Button: </span>
-                {variant === "C" ? "Get Started" : "Try Demo"}
-              </div>
-              <div>
-                <span className="font-medium">Secondary Button: </span>
-                {variant === "C" ? "Try Now" : "Learn More"}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Announcement Management Section */}
-      <div className="my-8">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold">Feature Announcements</h2>
-          <Button onClick={() => setShowAnnouncementForm(true)}>
-            Create Announcement
-          </Button>
-        </div>
-
-        {/* Announcement Form */}
-        {showAnnouncementForm && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>{editingAnnouncement ? 'Edit' : 'Create'} Announcement</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleAnnouncementSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Title</label>
-                  <Input
-                    value={announcementForm.title}
-                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="Announcement title"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Message</label>
-                  <textarea
-                    value={announcementForm.message}
-                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, message: e.target.value }))}
-                    placeholder="Announcement message (supports simple HTML: <b>, <a>, etc.)"
-                    className="w-full p-2 border rounded-md"
-                    rows={4}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Link (optional)</label>
-                  <Input
-                    value={announcementForm.link}
-                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, link: e.target.value }))}
-                    placeholder="https://example.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Type</label>
-                  <select
-                    value={announcementForm.type}
-                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, type: e.target.value }))}
-                    className="w-full p-2 border rounded-md"
-                  >
-                    <option value="feature_update">Feature Update</option>
-                    <option value="bug_fix">Bug Fix</option>
-                    <option value="general_news">General News</option>
-                  </select>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="active"
-                    checked={announcementForm.active}
-                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, active: e.target.checked }))}
-                  />
-                  <label htmlFor="active" className="text-sm">Active (visible to users)</label>
-                </div>
-                <div className="flex space-x-2">
-                  <Button type="submit">
-                    {editingAnnouncement ? 'Update' : 'Create'}
-                  </Button>
-                  <Button type="button" variant="outline" onClick={handlePreview}>
-                    Preview
-                  </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => {
-                      setShowAnnouncementForm(false);
-                      setEditingAnnouncement(null);
-                      setAnnouncementForm({
-                        title: '',
-                        message: '',
-                        link: '',
-                        type: 'feature_update',
-                        active: true
-                      });
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Announcements List */}
-        <div className="space-y-4">
-          {announcements.map((announcement) => (
-            <Card key={announcement.id}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <h3 className="font-semibold">{announcement.title}</h3>
-                      {getTypeBadge(announcement.type)}
-                      {announcement.active && (
-                        <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Active</Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                      {announcement.message.substring(0, 100)}...
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Created: {new Date(announcement.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => editAnnouncement(announcement)}
-                  >
-                    Edit
-                  </Button>
-                </div>
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Teams</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-foreground">{adminData?.teams.length || 0}</p>
               </CardContent>
             </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Preview Modal */}
-      {showPreview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="max-w-md w-full">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Preview</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)}>
-                  ✕
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <span className="text-2xl">🎉</span>
-                  <h3 className="font-semibold">What's New</h3>
-                </div>
-                <div className="flex items-center space-x-2">
-                  {getTypeBadge(announcementForm.type)}
-                  <span className="text-sm text-gray-500">Today</span>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-2">{announcementForm.title}</h4>
-                  <div 
-                    className="text-gray-700 dark:text-gray-300 prose prose-sm"
-                    dangerouslySetInnerHTML={{ 
-                      __html: announcementForm.message.replace(/\n/g, '<br>') 
-                    }}
-                  />
-                </div>
-                {announcementForm.link && (
-                  <div>
-                    <a 
-                      href={announcementForm.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                    >
-                      Learn more →
-                    </a>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Team Role Management Component
-function TeamRoleManagement() {
-  const [members, setMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
-  const [removingUser, setRemovingUser] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadTeamMembers();
-  }, []);
-
-  async function loadTeamMembers() {
-    try {
-      const data = await fetchTeamMembersWithRoles();
-      setMembers(data.members || []);
-    } catch (error) {
-      console.error("Failed to load team members:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function updateRole(userId: string, newRole: string) {
-    setUpdatingRole(userId);
-    try {
-      const result = await updateTeamMemberRole(userId, newRole);
-      if (result.success) {
-        // Update local state
-        setMembers(prev => 
-          prev.map(member => 
-            member.user_id === userId 
-              ? { ...member, role: newRole }
-              : member
-          )
-        );
-      } else {
-        alert(result.message || "Failed to update role");
-      }
-    } catch (error) {
-      console.error("Failed to update role:", error);
-      alert("Failed to update role. Please try again.");
-    } finally {
-      setUpdatingRole(null);
-    }
-  }
-
-  async function removeUser(userId: string) {
-    if (!confirm("Are you sure you want to remove this user from the team?")) {
-      return;
-    }
-    
-    setRemovingUser(userId);
-    try {
-      const result = await removeTeamMemberFromTeam(userId);
-      if (result.success) {
-        // Remove from local state
-        setMembers(prev => prev.filter(member => member.user_id !== userId));
-      } else {
-        alert(result.message || "Failed to remove user");
-      }
-    } catch (error) {
-      console.error("Failed to remove user:", error);
-      alert("Failed to remove user. Please try again.");
-    } finally {
-      setRemovingUser(null);
-    }
-  }
-
-  function getRoleBadge(role: string) {
-    switch (role) {
-      case "admin":
-        return <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">Admin</Badge>;
-      case "analyst":
-        return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Analyst</Badge>;
-      case "member":
-        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Member</Badge>;
-      case "viewer":
-        return <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200">Viewer</Badge>;
-      default:
-        return <Badge variant="secondary">{role}</Badge>;
-    }
-  }
-
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Team Role Management</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center">Loading team members...</div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Team Role Management</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {members.map((member) => (
-            <div key={member.user_id} className="border rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-medium">{member.name}</h4>
-                    {member.is_premium && (
-                      <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 text-xs">
-                        Premium
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{member.email}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    {getRoleBadge(member.role)}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={member.role}
-                    onChange={(e) => updateRole(member.user_id, e.target.value)}
-                    disabled={updatingRole === member.user_id}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  >
-                    <option value="member">Member</option>
-                    <option value="analyst">Analyst</option>
-                    <option value="admin">Admin</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => removeUser(member.user_id)}
-                    disabled={removingUser === member.user_id}
-                  >
-                    {removingUser === member.user_id ? "Removing..." : "Remove"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        {members.length === 0 && (
-          <p className="text-gray-500 text-center py-4">No team members found.</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// API Key Management Section Component
-function ApiKeyManagementSection() {
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [creatingApiKey, setCreatingApiKey] = useState(false);
-  const [newApiKeyName, setNewApiKeyName] = useState("");
-  const [newApiKey, setNewApiKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadApiKeys();
-  }, []);
-
-  async function loadApiKeys() {
-    try {
-      const data = await fetchApiKeys();
-      setApiKeys(data.apiKeys || []);
-    } catch (error) {
-      console.error("Failed to load API keys:", error);
-    }
-  }
-
-  async function handleCreateApiKey(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newApiKeyName.trim()) return;
-
-    setCreatingApiKey(true);
-    try {
-      const result = await createApiKey(newApiKeyName);
-      if (result.success) {
-        setNewApiKey(result.apiKey);
-        setNewApiKeyName("");
-        loadApiKeys(); // Refresh API keys list
-      }
-    } catch (error) {
-      console.error("Failed to create API key:", error);
-      alert("Failed to create API key. Please try again.");
-    } finally {
-      setCreatingApiKey(false);
-    }
-  }
-
-  async function handleRevokeApiKey(keyId: string) {
-    if (!confirm("Are you sure you want to revoke this API key? This action cannot be undone.")) {
-      return;
-    }
-
-    try {
-      await revokeApiKey(keyId);
-      loadApiKeys(); // Refresh API keys list
-    } catch (error) {
-      console.error("Failed to revoke API key:", error);
-      alert("Failed to revoke API key. Please try again.");
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          🔑 API Key Management
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          {/* Create new API key */}
-          <div>
-            <h4 className="font-medium mb-3">Create New API Key</h4>
-            <form onSubmit={handleCreateApiKey} className="flex gap-2">
-              <Input
-                value={newApiKeyName}
-                onChange={(e) => setNewApiKeyName(e.target.value)}
-                placeholder="API key name (e.g., 'Production App')"
-                required
-                className="flex-1"
-              />
-              <Button type="submit" disabled={creatingApiKey || !newApiKeyName.trim()}>
-                {creatingApiKey ? "Creating..." : "Create Key"}
-              </Button>
-            </form>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-foreground">{adminStats?.totalUsers || 0}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-foreground">{adminStats?.activeUsers || 0}</p>
+                <p className="text-sm text-muted-foreground">Last 7 days</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Conversion Rate</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-foreground">{adminStats?.conversionRate || "0%"}</p>
+                <p className="text-sm text-muted-foreground">Free to Premium</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">MRR</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-foreground">{adminStats?.mrr || "$0"}</p>
+                <p className="text-sm text-muted-foreground">Monthly Recurring</p>
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Show newly created key */}
-          {newApiKey && (
-            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-              <h4 className="font-medium text-green-800 dark:text-green-200 mb-2">API Key Created Successfully!</h4>
-              <p className="text-sm text-green-700 dark:text-green-300 mb-3">
-                Store this key securely - you won't see it again:
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 p-2 bg-white dark:bg-gray-800 rounded text-sm font-mono">
-                  {newApiKey}
-                </code>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    navigator.clipboard.writeText(newApiKey);
-                    alert("API key copied to clipboard!");
-                  }}
-                >
-                  Copy
-                </Button>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setNewApiKey(null)}
-                className="mt-2"
-              >
-                Dismiss
-              </Button>
-            </div>
-          )}
-
-          {/* Existing API keys */}
-          <div>
-            <h4 className="font-medium mb-3">Existing API Keys</h4>
-            {apiKeys.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">No API keys found.</p>
-            ) : (
-              <div className="space-y-3">
-                {apiKeys.map((key) => (
-                  <div key={key.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <p className="font-medium">{key.name}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Created: {new Date(key.created_at).toLocaleDateString()}
-                        {key.last_used_at && (
-                          <span> • Last used: {new Date(key.last_used_at).toLocaleDateString()}</span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={key.is_active ? "default" : "secondary"}>
-                        {key.is_active ? "Active" : "Revoked"}
-                      </Badge>
-                      {key.is_active && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleRevokeApiKey(key.id)}
-                        >
-                          Revoke
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Usage instructions */}
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <h4 className="font-medium mb-2">API Usage Instructions</h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-              Use your API key in the Authorization header:
-            </p>
-            <code className="block p-2 bg-white dark:bg-gray-800 rounded text-sm font-mono">
-              Authorization: Bearer YOUR_API_KEY
-            </code>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-              Available endpoints: /api/plays, /api/signals, /api/analytics
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Workshop Notification Settings Section Component
-function WorkshopNotificationSettingsSection() {
-  const [settings, setSettings] = useState<WorkshopNotificationSettings>({
-    slack_enabled: true,
-    notify_goals_completed: true,
-    notify_plays_selected: true,
-    notify_workshop_completed: true
-  });
-  const [updating, setUpdating] = useState(false);
-
-  useEffect(() => {
-    loadSettings();
-  }, []);
-
-  async function loadSettings() {
-    try {
-      const data = await fetchWorkshopNotificationSettings();
-      if (data.settings) {
-        setSettings(data.settings);
-      }
-    } catch (error) {
-      console.error("Failed to load workshop settings:", error);
-    }
-  }
-
-  async function handleUpdateSettings() {
-    setUpdating(true);
-    try {
-      await updateWorkshopNotificationSettings(settings);
-      alert("Workshop notification settings updated successfully!");
-    } catch (error) {
-      console.error("Failed to update workshop settings:", error);
-      alert("Failed to update workshop settings. Please try again.");
-    } finally {
-      setUpdating(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          🔔 Workshop Notification Settings
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">Enable Slack Notifications</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Send workshop updates to your connected Slack channel
-              </p>
-            </div>
-            <input
-              type="checkbox"
-              checked={settings.slack_enabled}
-              onChange={(e) => setSettings(prev => ({ ...prev, slack_enabled: e.target.checked }))}
-              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-            />
-          </div>
-
-          {settings.slack_enabled && (
-            <div className="space-y-3 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Notify when goals are completed</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Send notification when team finishes Step 1
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.notify_goals_completed}
-                  onChange={(e) => setSettings(prev => ({ ...prev, notify_goals_completed: e.target.checked }))}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Notify when plays are selected</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Send notification when team finishes Step 2
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.notify_plays_selected}
-                  onChange={(e) => setSettings(prev => ({ ...prev, notify_plays_selected: e.target.checked }))}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Notify when workshop is completed</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Send notification when team finishes the entire workshop
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.notify_workshop_completed}
-                  onChange={(e) => setSettings(prev => ({ ...prev, notify_workshop_completed: e.target.checked }))}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                />
-              </div>
-            </div>
-          )}
-
-          <Button 
-            onClick={handleUpdateSettings}
-            disabled={updating}
-            className="w-full"
-          >
-            {updating ? "Updating..." : "Update Settings"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Slack Integration Section Component
-function SlackIntegrationSection() {
-  const [slackSettings, setSlackSettings] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [reconnecting, setReconnecting] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-
-  useEffect(() => {
-    loadSlackSettings();
-  }, []);
-
-  async function loadSlackSettings() {
-    try {
-      const data = await fetchSlackSettings();
-      setSlackSettings(data);
-    } catch (error) {
-      console.error("Failed to load Slack settings:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function reconnectSlack() {
-    setReconnecting(true);
-    try {
-      // Placeholder action - would integrate with actual Slack OAuth
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      alert("Slack reconnection would be implemented here");
-    } catch (error) {
-      console.error("Failed to reconnect Slack:", error);
-      alert("Failed to reconnect Slack. Please try again.");
-    } finally {
-      setReconnecting(false);
-    }
-  }
-
-  async function disconnectSlack() {
-    if (!confirm("Are you sure you want to disconnect Slack integration?")) {
-      return;
-    }
-    
-    setDisconnecting(true);
-    try {
-      // Placeholder action - would update database
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setSlackSettings({ ...slackSettings, is_active: false });
-      alert("Slack disconnected successfully");
-    } catch (error) {
-      console.error("Failed to disconnect Slack:", error);
-      alert("Failed to disconnect Slack. Please try again.");
-    } finally {
-      setDisconnecting(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Slack Integration</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center">Loading Slack settings...</div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          💬 Slack Integration
-          <Badge variant={slackSettings?.is_active ? "default" : "secondary"}>
-            {slackSettings?.is_active ? "Connected" : "Disconnected"}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {slackSettings?.is_active ? (
+          {/* Teams Management Section */}
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <h4 className="font-medium text-gray-900 dark:text-white mb-2">Workspace</h4>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {slackSettings.workspace_name || "Demo Workspace"}
-                </p>
-              </div>
-              <div>
-                <h4 className="font-medium text-gray-900 dark:text-white mb-2">Connected Channels</h4>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {slackSettings.connected_channels || "All Channels"}
-                </p>
-              </div>
-            </div>
-            
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white mb-2">Last Sync</h4>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {slackSettings.last_sync ? new Date(slackSettings.last_sync).toLocaleString() : "Never"}
-              </p>
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={reconnectSlack}
-                disabled={reconnecting}
-              >
-                {reconnecting ? "Reconnecting..." : "Reconnect"}
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={disconnectSlack}
-                disabled={disconnecting}
-              >
-                {disconnecting ? "Disconnecting..." : "Disconnect"}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center space-y-4">
-            <p className="text-gray-600 dark:text-gray-400">
-              Connect your Slack workspace to enable team collaboration and notifications.
-            </p>
-            <Button onClick={reconnectSlack} disabled={reconnecting}>
-              {reconnecting ? "Connecting..." : "Connect Slack"}
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-} 
-
-// Notification Sending Section Component
-function NotificationSendingSection() {
-  const [sending, setSending] = useState(false);
-  const [notificationForm, setNotificationForm] = useState({
-    title: "",
-    message: "",
-    type: "info",
-    priority: "normal",
-    action_url: "",
-    action_text: "",
-    user_id: "",
-    team_id: ""
-  });
-
-  async function handleSendNotification(e: React.FormEvent) {
-    e.preventDefault();
-    setSending(true);
-    
-    try {
-      await sendNotification(notificationForm);
-      alert("Notification sent successfully!");
-      setNotificationForm({
-        title: "",
-        message: "",
-        type: "info",
-        priority: "normal",
-        action_url: "",
-        action_text: "",
-        user_id: "",
-        team_id: ""
-      });
-    } catch (error) {
-      console.error("Failed to send notification:", error);
-      alert("Failed to send notification. Please try again.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          🔔 Send Notifications
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSendNotification} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Title
-              </label>
-              <Input
-                value={notificationForm.title}
-                onChange={(e) => setNotificationForm(prev => ({ ...prev, title: e.target.value }))}
-                placeholder="Notification title"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Type
-              </label>
-              <select
-                value={notificationForm.type}
-                onChange={(e) => setNotificationForm(prev => ({ ...prev, type: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              >
-                <option value="info">Info</option>
-                <option value="success">Success</option>
-                <option value="warning">Warning</option>
-                <option value="error">Error</option>
-              </select>
+            <h2 className="text-2xl font-bold text-foreground">Team Management</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-card border border-border rounded-lg">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Team</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Members</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Status</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {adminData?.teams.map((team: any) => (
+                    <tr key={team.id} className="hover:bg-muted/50">
+                      <td className="px-4 py-3 text-sm text-foreground">{team.name}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{team.member_count}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={team.status === 'active' ? 'default' : 'secondary'}>
+                          {team.status}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <Button size="sm" variant="outline">
+                          View Details
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Message
-            </label>
-            <textarea
-              value={notificationForm.message}
-              onChange={(e) => setNotificationForm(prev => ({ ...prev, message: e.target.value }))}
-              placeholder="Notification message"
-              required
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Priority
-              </label>
-              <select
-                value={notificationForm.priority}
-                onChange={(e) => setNotificationForm(prev => ({ ...prev, priority: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              >
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Action URL (optional)
-              </label>
-              <Input
-                value={notificationForm.action_url}
-                onChange={(e) => setNotificationForm(prev => ({ ...prev, action_url: e.target.value }))}
-                placeholder="https://..."
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Action Text (optional)
-              </label>
-              <Input
-                value={notificationForm.action_text}
-                onChange={(e) => setNotificationForm(prev => ({ ...prev, action_text: e.target.value }))}
-                placeholder="View Details"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Target User ID (optional)
-              </label>
-              <Input
-                value={notificationForm.user_id}
-                onChange={(e) => setNotificationForm(prev => ({ ...prev, user_id: e.target.value }))}
-                placeholder="Leave empty for team-wide"
-              />
-            </div>
-          </div>
-
-          <Button type="submit" disabled={sending} className="w-full">
-            {sending ? "Sending..." : "Send Notification"}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Subscription Management Section Component
-function SubscriptionManagementSection() {
-  const [subscriptions, setSubscriptions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState<string | null>(null);
-  const [showActions, setShowActions] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadSubscriptions();
-  }, []);
-
-  async function loadSubscriptions() {
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/subscriptions`);
-      if (res.ok) {
-        const data = await res.json();
-        setSubscriptions(data.subscriptions || []);
-      }
-    } catch (error) {
-      console.error("Failed to load subscriptions:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function updateSubscription(teamId: string, action: string, plan?: string) {
-    setUpdating(teamId);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/subscription/update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId, action, plan })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        alert(data.message);
-        await loadSubscriptions();
-      } else {
-        const error = await res.json();
-        alert(error.message || "Failed to update subscription");
-      }
-    } catch (error) {
-      console.error("Failed to update subscription:", error);
-      alert("Failed to update subscription");
-    } finally {
-      setUpdating(null);
-      setShowActions(null);
-    }
-  }
-
-  function getStatusBadge(status: string) {
-    const variants: Record<string, "default" | "secondary" | "destructive"> = {
-      'free': 'secondary',
-      'premium': 'default',
-      'pro': 'default',
-      'cancelled': 'destructive'
-    };
-    return <Badge variant={variants[status] || 'secondary'}>{status}</Badge>;
-  }
-
-  function getActionButtons(team: any) {
-    const actions = [];
-    
-    if (team.billing_status === 'free') {
-      actions.push(
-        <Button
-          key="upgrade-premium"
-          size="sm"
-          onClick={() => updateSubscription(team.team_id, 'upgrade', 'premium')}
-          disabled={updating === team.team_id}
-        >
-          Upgrade to Premium
-        </Button>,
-        <Button
-          key="upgrade-pro"
-          size="sm"
-          variant="outline"
-          onClick={() => updateSubscription(team.team_id, 'upgrade', 'pro')}
-          disabled={updating === team.team_id}
-        >
-          Upgrade to Pro
-        </Button>
-      );
-    } else if (team.billing_status === 'premium') {
-      actions.push(
-        <Button
-          key="upgrade-pro"
-          size="sm"
-          onClick={() => updateSubscription(team.team_id, 'upgrade', 'pro')}
-          disabled={updating === team.team_id}
-        >
-          Upgrade to Pro
-        </Button>,
-        <Button
-          key="downgrade"
-          size="sm"
-          variant="outline"
-          onClick={() => updateSubscription(team.team_id, 'downgrade')}
-          disabled={updating === team.team_id}
-        >
-          Downgrade
-        </Button>,
-        <Button
-          key="cancel"
-          size="sm"
-          variant="destructive"
-          onClick={() => {
-            if (confirm('Are you sure you want to cancel this subscription?')) {
-              updateSubscription(team.team_id, 'cancel');
-            }
-          }}
-          disabled={updating === team.team_id}
-        >
-          Cancel
-        </Button>
-      );
-    } else if (team.billing_status === 'pro') {
-      actions.push(
-        <Button
-          key="downgrade"
-          size="sm"
-          variant="outline"
-          onClick={() => updateSubscription(team.team_id, 'downgrade')}
-          disabled={updating === team.team_id}
-        >
-          Downgrade
-        </Button>,
-        <Button
-          key="cancel"
-          size="sm"
-          variant="destructive"
-          onClick={() => {
-            if (confirm('Are you sure you want to cancel this subscription?')) {
-              updateSubscription(team.team_id, 'cancel');
-            }
-          }}
-          disabled={updating === team.team_id}
-        >
-          Cancel
-        </Button>
-      );
-    } else if (team.billing_status === 'cancelled') {
-      actions.push(
-        <Button
-          key="resume"
-          size="sm"
-          onClick={() => updateSubscription(team.team_id, 'resume')}
-          disabled={updating === team.team_id}
-        >
-          Resume
-        </Button>
-      );
-    }
-
-    return actions;
-  }
-
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            💳 Subscription Management
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <p className="text-gray-600 dark:text-gray-400">Loading subscriptions...</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          💳 Subscription Management
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {subscriptions.length === 0 ? (
-            <p className="text-gray-600 dark:text-gray-400 text-center py-8">
-              No teams found
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {subscriptions.map((team) => (
-                <div key={team.team_id} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">
-                        {team.team_name}
-                      </h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {team.member_count} members • Created {new Date(team.team_created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {getStatusBadge(team.billing_status)}
+          {/* Feature Flags Section */}
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-foreground">Feature Flags</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Object.entries(featureFlags).map(([key, value]) => (
+                <Card key={key}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-medium text-foreground">{key}</h3>
+                        <p className="text-sm text-muted-foreground">Feature flag</p>
+                      </div>
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => setShowActions(showActions === team.team_id ? null : team.team_id)}
+                        variant={value ? "default" : "outline"}
+                        onClick={() => toggleFeatureFlag(key, value)}
                       >
-                        Actions
+                        {value ? "Enabled" : "Disabled"}
                       </Button>
                     </div>
-                  </div>
-
-                  {showActions === team.team_id && (
-                    <div className="border-t pt-3">
-                      <div className="flex flex-wrap gap-2">
-                        {getActionButtons(team)}
-                      </div>
-                      {updating === team.team_id && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                          Updating subscription...
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {team.stripe_customer_id && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      Stripe Customer: {team.stripe_customer_id}
-                    </p>
-                  )}
-                </div>
+                  </CardContent>
+                </Card>
               ))}
+            </div>
+          </div>
+
+          {/* Experiment Metrics Dashboard */}
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-foreground">Experiment Metrics</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-card border border-border rounded-lg">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Experiment</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Variant</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Exposures</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Engagements</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Conversions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {experimentMetrics.map((row, idx) => (
+                    <tr key={idx} className="hover:bg-muted/50">
+                      <td className="px-4 py-3 text-sm text-foreground">{row.name}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.variant}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.exposures}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.engagements}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.conversions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Experiment Preview Section */}
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-foreground">Experiment Variant Preview</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {["A", "B", "C"].map((variant) => (
+                <Card key={variant} className="p-4">
+                  <h3 className="font-semibold mb-2 text-foreground">Landing CTA Variant {variant}</h3>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="font-medium text-foreground">Headline: </span>
+                      <span className="text-muted-foreground">
+                        {variant === "B" ? "Ready to Supercharge Your Team?" : variant === "C" ? "Get Started with Rhythm90" : "Ready to Transform Your Marketing Operations?"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Primary Button: </span>
+                      <span className="text-muted-foreground">
+                        {variant === "C" ? "Get Started" : "Try Demo"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Secondary Button: </span>
+                      <span className="text-muted-foreground">
+                        {variant === "C" ? "Try Now" : "Learn More"}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Announcement Management Section */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h2 className="text-2xl font-bold text-foreground">Feature Announcements</h2>
+              <Button onClick={() => setShowAnnouncementForm(true)}>
+                Create Announcement
+              </Button>
+            </div>
+
+            {/* Announcement Form */}
+            {showAnnouncementForm && (
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4 text-foreground">
+                  {editingAnnouncement ? 'Edit' : 'Create'} Announcement
+                </h3>
+                <form onSubmit={handleAnnouncementSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-foreground">Title</label>
+                    <Input
+                      value={announcementForm.title}
+                      onChange={(e) => setAnnouncementForm(prev => ({ ...prev, title: e.target.value }))}
+                      placeholder="Announcement title"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-foreground">Message</label>
+                    <textarea
+                      value={announcementForm.message}
+                      onChange={(e) => setAnnouncementForm(prev => ({ ...prev, message: e.target.value }))}
+                      placeholder="Announcement message (supports simple HTML: <b>, <a>, etc.)"
+                      className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+                      rows={4}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-foreground">Link (optional)</label>
+                    <Input
+                      value={announcementForm.link}
+                      onChange={(e) => setAnnouncementForm(prev => ({ ...prev, link: e.target.value }))}
+                      placeholder="https://example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-foreground">Type</label>
+                    <select
+                      value={announcementForm.type}
+                      onChange={(e) => setAnnouncementForm(prev => ({ ...prev, type: e.target.value }))}
+                      className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+                    >
+                      <option value="feature_update">Feature Update</option>
+                      <option value="bug_fix">Bug Fix</option>
+                      <option value="general_news">General News</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="active"
+                      checked={announcementForm.active}
+                      onChange={(e) => setAnnouncementForm(prev => ({ ...prev, active: e.target.checked }))}
+                    />
+                    <label htmlFor="active" className="text-sm text-foreground">Active (visible to users)</label>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="submit">
+                      {editingAnnouncement ? 'Update' : 'Create'}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={handlePreview}>
+                      Preview
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => {
+                        setShowAnnouncementForm(false);
+                        setEditingAnnouncement(null);
+                        setAnnouncementForm({
+                          title: '',
+                          message: '',
+                          link: '',
+                          type: 'feature_update',
+                          active: true
+                        });
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              </Card>
+            )}
+
+            {/* Announcements List */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {announcements.map((announcement) => (
+                <Card key={announcement.id} className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <h3 className="font-semibold text-foreground">{announcement.title}</h3>
+                        {getTypeBadge(announcement.type)}
+                        {announcement.active && (
+                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Active</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {announcement.message.substring(0, 100)}...
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Created: {new Date(announcement.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => editAnnouncement(announcement)}
+                    >
+                      Edit
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Preview Modal */}
+          {showPreview && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <Card className="max-w-md w-full">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Preview</CardTitle>
+                    <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)}>
+                      ✕
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-2xl">🎉</span>
+                      <h3 className="font-semibold text-foreground">What's New</h3>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {getTypeBadge(announcementForm.type)}
+                      <span className="text-sm text-muted-foreground">Today</span>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold mb-2 text-foreground">{announcementForm.title}</h4>
+                      <div 
+                        className="text-muted-foreground prose prose-sm"
+                        dangerouslySetInnerHTML={{ 
+                          __html: announcementForm.message.replace(/\n/g, '<br>') 
+                        }}
+                      />
+                    </div>
+                    {announcementForm.link && (
+                      <div>
+                        <a 
+                          href={announcementForm.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                        >
+                          Learn more →
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
-      </CardContent>
-    </Card>
-  );
-} 
-
-// Enterprise Features Section Component
-function EnterpriseFeaturesSection() {
-  const [teams, setTeams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadTeams();
-  }, []);
-
-  async function loadTeams() {
-    try {
-      const response = await fetch('/admin');
-      const data = await response.json();
-      setTeams(data.teams || []);
-    } catch (error) {
-      console.error('Failed to load teams:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>🏢 Enterprise Features</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center">Loading enterprise features...</div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>🏢 Enterprise Features</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          {/* Custom Domains */}
-          <div>
-            <h3 className="text-lg font-semibold mb-3">Custom Domains</h3>
-            <div className="space-y-3">
-              {teams.map((team) => (
-                <div key={team.id} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">{team.name}</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {team.custom_domain || 'No custom domain configured'}
-                      </p>
-                    </div>
-                    <Badge variant={team.custom_domain ? "default" : "secondary"}>
-                      {team.custom_domain ? 'Configured' : 'Not Set'}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* SAML SSO */}
-          <div>
-            <h3 className="text-lg font-semibold mb-3">SAML SSO Configuration</h3>
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
-              <p className="text-sm text-yellow-800 dark:text-yellow-400">
-                SAML SSO is coming soon! This feature will allow enterprise customers to configure 
-                single sign-on for their organization.
-              </p>
-            </div>
-          </div>
-
-          {/* Integrations Status */}
-          <div>
-            <h3 className="text-lg font-semibold mb-3">Integrations Overview</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="border rounded-lg p-4">
-                <h4 className="font-medium mb-2">Slack</h4>
-                <Badge className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
-                  Available
-                </Badge>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  Real-time notifications and signal logging
-                </p>
-              </div>
-              <div className="border rounded-lg p-4">
-                <h4 className="font-medium mb-2">Zapier</h4>
-                <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
-                  Beta
-                </Badge>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  Connect with 5000+ apps
-                </p>
-              </div>
-              <div className="border rounded-lg p-4">
-                <h4 className="font-medium mb-2">Microsoft Teams</h4>
-                <Badge variant="secondary">Coming Soon</Badge>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  Team collaboration integration
-                </p>
-              </div>
-              <div className="border rounded-lg p-4">
-                <h4 className="font-medium mb-2">HubSpot</h4>
-                <Badge variant="secondary">Coming Soon</Badge>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  CRM and marketing data sync
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </PageLayout>
   );
 } 
