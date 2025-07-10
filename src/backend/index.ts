@@ -1,7 +1,13 @@
 export default {
   async fetch(request: Request): Promise<Response> {
-    return new Response("Hello from Rhythm90 API!", {
-      headers: { "Content-Type": "text/plain" },
-    });
+    const { pathname } = new URL(request.url);
+
+    if (pathname === "/health") {
+      return new Response(JSON.stringify({ status: "ok" }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response("Not Found", { status: 404 });
   },
 }; 
