@@ -1695,6 +1695,494 @@ export default {
       return Response.json({ success: true });
     }
 
+    // Workshop live collaboration routes
+    if (pathname === "/workshop/presence" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const body = await request.json() as { current_step: string };
+      
+      // Update or insert presence
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO workshop_presence 
+        (id, user_id, team_id, current_step, last_seen, is_active, created_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE, COALESCE((SELECT created_at FROM workshop_presence WHERE user_id = ? AND team_id = ?), CURRENT_TIMESTAMP))
+      `).bind(
+        crypto.randomUUID(),
+        userId,
+        teamId,
+        body.current_step,
+        userId,
+        teamId
+      ).run();
+
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/workshop/presence" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      // Get active users in workshop (active in last 5 minutes)
+      const activeUsers = await env.DB.prepare(`
+        SELECT 
+          wp.user_id,
+          wp.current_step,
+          wp.last_seen,
+          u.name,
+          u.email
+        FROM workshop_presence wp
+        JOIN users u ON wp.user_id = u.id
+        WHERE wp.team_id = ? 
+        AND wp.is_active = TRUE
+        AND wp.last_seen > datetime('now', '-5 minutes')
+        ORDER BY wp.last_seen DESC
+      `).bind(teamId).all();
+
+      return Response.json({ activeUsers: activeUsers.results });
+    }
+
+    if (pathname === "/workshop/sync" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const lastSync = url.searchParams.get("since") || new Date(Date.now() - 30000).toISOString();
+
+      // Get recent workshop updates
+      const updates = await env.DB.prepare(`
+        SELECT 
+          step, status, data, started_at, completed_at, last_activity
+        FROM workshop_step_progress
+        WHERE team_id = ? 
+        AND last_activity > ?
+        ORDER BY last_activity DESC
+      `).bind(teamId, lastSync).all();
+
+      return Response.json({ updates: updates.results });
+    }
+
+    // Enhanced workshop progress with Slack notifications
+    if (pathname === "/workshop/progress" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const body = await request.json() as { 
+        step: string; 
+        status: string; 
+        data?: string 
+      };
+
+      // Validate step
+      const validSteps = ["goals", "plays", "owners", "signals", "review"];
+      if (!validSteps.includes(body.step)) {
+        return Response.json({ success: false, message: "Invalid step" }, { status: 400 });
+      }
+
+      // Validate status
+      const validStatuses = ["pending", "in_progress", "completed"];
+      if (!validStatuses.includes(body.status)) {
+        return Response.json({ success: false, message: "Invalid status" }, { status: 400 });
+      }
+
+      // Update or insert progress
+      const now = new Date().toISOString();
+      const startedAt = body.status === "in_progress" ? now : null;
+      const completedAt = body.status === "completed" ? now : null;
+
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO workshop_step_progress 
+        (id, user_id, team_id, step, status, data, started_at, completed_at, last_activity, is_active, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE, CURRENT_TIMESTAMP)
+      `).bind(
+        crypto.randomUUID(), 
+        userId, 
+        teamId, 
+        body.step, 
+        body.status, 
+        body.data || null,
+        startedAt,
+        completedAt
+      ).run();
+
+      // Check if this is a major milestone for Slack notifications
+      const isMajorMilestone = body.status === "completed" && 
+        (body.step === "goals" || body.step === "plays" || body.step === "review");
+
+      if (isMajorMilestone) {
+        // Get notification settings
+        const settings = await env.DB.prepare(`
+          SELECT * FROM workshop_notification_settings WHERE team_id = ?
+        `).bind(teamId).first();
+
+        if (settings?.slack_enabled) {
+          let shouldNotify = false;
+          let message = "";
+
+          if (body.step === "goals" && settings.notify_goals_completed) {
+            shouldNotify = true;
+            message = "🎯 Team goals have been set! Workshop is progressing well.";
+          } else if (body.step === "plays" && settings.notify_plays_selected) {
+            shouldNotify = true;
+            message = "📋 Plays have been selected! Team is ready to assign owners.";
+          } else if (body.step === "review" && settings.notify_workshop_completed) {
+            shouldNotify = true;
+            message = "🎉 Workshop completed! Your team is now ready to track signals.";
+          }
+
+          if (shouldNotify) {
+            await sendSlackNotification(env, teamId, message);
+          }
+        }
+      }
+
+      // Log analytics event
+      if (body.status === "completed") {
+        await env.DB.prepare(`
+          INSERT INTO analytics_events (id, user_id, team_id, event_type, event_data)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          teamId,
+          "workshop_step_completed",
+          JSON.stringify({ step: body.step })
+        ).run();
+      }
+
+      return Response.json({ success: true });
+    }
+
+    // Premium analytics routes
+    if (pathname === "/analytics/premium" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const isPremium = await isUserPremium(env, userId);
+      
+      if (!isPremium) {
+        return Response.json({ error: "Premium access required" }, { status: 403 });
+      }
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const dateRange = url.searchParams.get("range") || "30d";
+      let dateFilter = "";
+      
+      switch (dateRange) {
+        case "7d":
+          dateFilter = "AND date >= date('now', '-7 days')";
+          break;
+        case "30d":
+          dateFilter = "AND date >= date('now', '-30 days')";
+          break;
+        case "all":
+        default:
+          dateFilter = "";
+          break;
+      }
+
+      // Get premium analytics data
+      const analyticsData = await env.DB.prepare(`
+        SELECT 
+          date,
+          ai_usage_count,
+          signals_logged,
+          plays_created,
+          workshop_completions,
+          mrr_amount
+        FROM premium_analytics
+        WHERE team_id = ? ${dateFilter}
+        ORDER BY date ASC
+      `).bind(teamId).all();
+
+      // Calculate trends
+      const data = analyticsData.results as any[];
+      const totalAIUsage = data.reduce((sum, row) => sum + (row.ai_usage_count || 0), 0);
+      const totalSignals = data.reduce((sum, row) => sum + (row.signals_logged || 0), 0);
+      const totalPlays = data.reduce((sum, row) => sum + (row.plays_created || 0), 0);
+      const totalWorkshops = data.reduce((sum, row) => sum + (row.workshop_completions || 0), 0);
+      
+      // Calculate MRR trend
+      const mrrData = data.map(row => ({
+        date: row.date,
+        mrr: (row.mrr_amount || 0) / 100 // Convert cents to dollars
+      }));
+
+      // Get AI usage frequency (daily average)
+      const aiUsageFrequency = data.length > 0 ? totalAIUsage / data.length : 0;
+
+      return Response.json({
+        analyticsData: data,
+        summary: {
+          totalAIUsage,
+          totalSignals,
+          totalPlays,
+          totalWorkshops,
+          aiUsageFrequency: Math.round(aiUsageFrequency * 10) / 10,
+          mrrTrend: mrrData
+        },
+        dateRange
+      });
+    }
+
+    // API key management routes
+    if (pathname === "/api/keys" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      const apiKeys = await env.DB.prepare(`
+        SELECT id, name, created_at, last_used_at, is_active
+        FROM api_keys
+        WHERE team_id = ?
+        ORDER BY created_at DESC
+      `).bind(teamId).all();
+
+      return Response.json({ apiKeys: apiKeys.results });
+    }
+
+    if (pathname === "/api/keys" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const body = await request.json() as { name: string };
+      
+      // Generate API key (simple for now, should be more secure in production)
+      const apiKey = `rk_${crypto.randomUUID().replace(/-/g, '')}`;
+      const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
+        .then(hash => Array.from(new Uint8Array(hash))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join(''));
+
+      await env.DB.prepare(`
+        INSERT INTO api_keys (id, team_id, key_hash, name, created_at, is_active)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE)
+      `).bind(
+        crypto.randomUUID(),
+        teamId,
+        keyHash,
+        body.name
+      ).run();
+
+      return Response.json({ 
+        success: true, 
+        apiKey, // Only return the key once
+        message: "API key created successfully. Store it securely - you won't see it again."
+      });
+    }
+
+    if (pathname === "/api/keys/revoke" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { key_id: string };
+      
+      await env.DB.prepare(`
+        UPDATE api_keys SET is_active = FALSE WHERE id = ?
+      `).bind(body.key_id).run();
+
+      return Response.json({ success: true });
+    }
+
+    // Public API routes
+    if (pathname.startsWith("/api/plays") && request.method === "GET") {
+      const apiKey = request.headers.get("Authorization")?.replace("Bearer ", "");
+      
+      if (!apiKey) {
+        return Response.json({ error: "API key required" }, { status: 401 });
+      }
+
+      // Validate API key
+      const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
+        .then(hash => Array.from(new Uint8Array(hash))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join(''));
+
+      const apiKeyRecord = await env.DB.prepare(`
+        SELECT ak.team_id, ak.is_active
+        FROM api_keys ak
+        WHERE ak.key_hash = ? AND ak.is_active = TRUE
+      `).bind(keyHash).first();
+
+      if (!apiKeyRecord) {
+        return Response.json({ error: "Invalid API key" }, { status: 401 });
+      }
+
+      // Update last used
+      await env.DB.prepare(`
+        UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
+      `).bind(keyHash).run();
+
+      // Get plays for the team
+      const plays = await env.DB.prepare(`
+        SELECT id, name, target_outcome, status, created_at
+        FROM plays
+        WHERE team_id = ?
+        ORDER BY created_at DESC
+      `).bind(apiKeyRecord.team_id).all();
+
+      return Response.json({ plays: plays.results });
+    }
+
+    if (pathname.startsWith("/api/signals") && request.method === "GET") {
+      const apiKey = request.headers.get("Authorization")?.replace("Bearer ", "");
+      
+      if (!apiKey) {
+        return Response.json({ error: "API key required" }, { status: 401 });
+      }
+
+      // Validate API key
+      const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
+        .then(hash => Array.from(new Uint8Array(hash))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join(''));
+
+      const apiKeyRecord = await env.DB.prepare(`
+        SELECT ak.team_id, ak.is_active
+        FROM api_keys ak
+        WHERE ak.key_hash = ? AND ak.is_active = TRUE
+      `).bind(keyHash).first();
+
+      if (!apiKeyRecord) {
+        return Response.json({ error: "Invalid API key" }, { status: 401 });
+      }
+
+      // Update last used
+      await env.DB.prepare(`
+        UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
+      `).bind(keyHash).run();
+
+      // Get signals for the team
+      const signals = await env.DB.prepare(`
+        SELECT s.id, s.observation, s.meaning, s.action, s.created_at, p.name as play_name
+        FROM signals s
+        JOIN plays p ON s.play_id = p.id
+        WHERE p.team_id = ?
+        ORDER BY s.created_at DESC
+      `).bind(apiKeyRecord.team_id).all();
+
+      return Response.json({ signals: signals.results });
+    }
+
+    if (pathname.startsWith("/api/analytics") && request.method === "GET") {
+      const apiKey = request.headers.get("Authorization")?.replace("Bearer ", "");
+      
+      if (!apiKey) {
+        return Response.json({ error: "API key required" }, { status: 401 });
+      }
+
+      // Validate API key
+      const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
+        .then(hash => Array.from(new Uint8Array(hash))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join(''));
+
+      const apiKeyRecord = await env.DB.prepare(`
+        SELECT ak.team_id, ak.is_active
+        FROM api_keys ak
+        WHERE ak.key_hash = ? AND ak.is_active = TRUE
+      `).bind(keyHash).first();
+
+      if (!apiKeyRecord) {
+        return Response.json({ error: "Invalid API key" }, { status: 401 });
+      }
+
+      // Update last used
+      await env.DB.prepare(`
+        UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
+      `).bind(keyHash).run();
+
+      // Get basic analytics for the team
+      const playsCount = await env.DB.prepare(`
+        SELECT COUNT(*) as count FROM plays WHERE team_id = ?
+      `).bind(apiKeyRecord.team_id).first();
+
+      const signalsCount = await env.DB.prepare(`
+        SELECT COUNT(*) as count FROM signals s
+        JOIN plays p ON s.play_id = p.id
+        WHERE p.team_id = ?
+      `).bind(apiKeyRecord.team_id).first();
+
+      const aiUsageCount = await env.DB.prepare(`
+        SELECT SUM(count) as total FROM ai_usage WHERE team_id = ?
+      `).bind(apiKeyRecord.team_id).first();
+
+      return Response.json({
+        analytics: {
+          totalPlays: playsCount?.count || 0,
+          totalSignals: signalsCount?.count || 0,
+          totalAIUsage: aiUsageCount?.total || 0
+        }
+      });
+    }
+
+    // Workshop notification settings
+    if (pathname === "/workshop/notification-settings" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      const settings = await env.DB.prepare(`
+        SELECT * FROM workshop_notification_settings WHERE team_id = ?
+      `).bind(teamId).first();
+
+      return Response.json({ settings: settings || {} });
+    }
+
+    if (pathname === "/workshop/notification-settings" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const body = await request.json() as {
+        slack_enabled: boolean;
+        notify_goals_completed: boolean;
+        notify_plays_selected: boolean;
+        notify_workshop_completed: boolean;
+      };
+
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO workshop_notification_settings 
+        (id, team_id, slack_enabled, notify_goals_completed, notify_plays_selected, notify_workshop_completed, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        crypto.randomUUID(),
+        teamId,
+        body.slack_enabled,
+        body.notify_goals_completed,
+        body.notify_plays_selected,
+        body.notify_workshop_completed
+      ).run();
+
+      return Response.json({ success: true });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 };

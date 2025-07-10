@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
-import { fetchWorkshopSteps, updateWorkshopProgress, fetchTemplates, fetchTeamMembersWithRoles } from "../utils/api";
+import { fetchWorkshopSteps, updateWorkshopProgress, fetchTemplates, fetchTeamMembersWithRoles, updateWorkshopPresence, fetchWorkshopPresence, fetchWorkshopSync } from "../utils/api";
 
 interface WorkshopStep {
   id: string;
@@ -29,11 +29,21 @@ interface TeamMember {
   role: string;
 }
 
+interface ActiveUser {
+  user_id: string;
+  current_step: string;
+  last_seen: string;
+  name: string;
+  email: string;
+}
+
 export default function Workshop() {
   const [steps, setSteps] = useState<WorkshopStep[]>([]);
   const [currentStep, setCurrentStep] = useState<string>("goals");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
+  const [lastSync, setLastSync] = useState<string>(new Date().toISOString());
   
   // Step data
   const [goals, setGoals] = useState("");
@@ -45,7 +55,15 @@ export default function Workshop() {
 
   useEffect(() => {
     loadWorkshopData();
+    startLiveSync();
   }, []);
+
+  useEffect(() => {
+    // Update presence when current step changes
+    if (currentStep) {
+      updateWorkshopPresence(currentStep);
+    }
+  }, [currentStep]);
 
   async function loadWorkshopData() {
     try {
@@ -64,6 +82,34 @@ export default function Workshop() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function startLiveSync() {
+    // Initial presence update
+    await updateWorkshopPresence(currentStep);
+    
+    // Start polling for presence and sync updates
+    const presenceInterval = setInterval(async () => {
+      try {
+        const [presenceData, syncData] = await Promise.all([
+          fetchWorkshopPresence(),
+          fetchWorkshopSync(lastSync)
+        ]);
+        
+        setActiveUsers(presenceData.activeUsers || []);
+        
+        // Apply any sync updates
+        if (syncData.updates && syncData.updates.length > 0) {
+          // Update local state based on team changes
+          // For now, just update the last sync timestamp
+          setLastSync(new Date().toISOString());
+        }
+      } catch (error) {
+        console.error("Live sync error:", error);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(presenceInterval);
   }
 
   async function saveStepProgress(step: string, status: string, data?: any) {
@@ -109,6 +155,10 @@ export default function Workshop() {
       default:
         return <Badge variant="secondary">⏳ Pending</Badge>;
     }
+  }
+
+  function getActiveUsersForStep(stepId: string): ActiveUser[] {
+    return activeUsers.filter(user => user.current_step === stepId);
   }
 
   async function handleStepComplete(stepId: string) {
@@ -194,44 +244,98 @@ export default function Workshop() {
         <p className="text-gray-600 dark:text-gray-400">
           Set up your marketing strategy in 5 simple steps
         </p>
+        
+        {/* Live collaboration indicator */}
+        {activeUsers.length > 0 && (
+          <div className="mt-4 flex items-center justify-center space-x-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {activeUsers.length} team member{activeUsers.length !== 1 ? 's' : ''} active
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Stepper Navigation */}
       <div className="flex justify-center">
         <div className="flex space-x-4">
-          {steps.map((step, index) => (
-            <div key={step.id} className="flex items-center">
-              <button
-                onClick={() => canAccessStep(step.id) && setCurrentStep(step.id)}
-                disabled={!canAccessStep(step.id)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                  currentStep === step.id
-                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                    : canAccessStep(step.id)
-                    ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-                    : "bg-gray-50 text-gray-400 dark:bg-gray-900 dark:text-gray-600 cursor-not-allowed"
-                }`}
-              >
-                <span className="text-sm font-medium">{index + 1}</span>
-                <span className="text-sm">{step.title}</span>
-                {getStepBadge(step.status)}
-              </button>
-              {index < steps.length - 1 && (
-                <div className="w-8 h-px bg-gray-300 dark:bg-gray-600 mx-2" />
-              )}
-            </div>
-          ))}
+          {steps.map((step, index) => {
+            const stepActiveUsers = getActiveUsersForStep(step.id);
+            return (
+              <div key={step.id} className="flex items-center">
+                <button
+                  onClick={() => canAccessStep(step.id) && setCurrentStep(step.id)}
+                  disabled={!canAccessStep(step.id)}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors relative ${
+                    currentStep === step.id
+                      ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                      : canAccessStep(step.id)
+                      ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                      : "bg-gray-50 text-gray-400 dark:bg-gray-900 dark:text-gray-600 cursor-not-allowed"
+                  }`}
+                >
+                  <span className="text-sm font-medium">{index + 1}</span>
+                  <span className="text-sm">{step.title}</span>
+                  {getStepBadge(step.status)}
+                  
+                  {/* Active users indicator */}
+                  {stepActiveUsers.length > 0 && (
+                    <div className="absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                      {stepActiveUsers.length}
+                    </div>
+                  )}
+                </button>
+                {index < steps.length - 1 && (
+                  <div className="w-8 h-px bg-gray-300 dark:bg-gray-600 mx-2" />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
+
+      {/* Active Users Panel */}
+      {activeUsers.length > 0 && (
+        <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              👥 Live Collaboration
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {activeUsers.map((user) => (
+                <div key={user.user_id} className="flex items-center space-x-2 bg-white dark:bg-gray-800 px-3 py-1 rounded-full text-sm">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="font-medium">{user.name}</span>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-gray-600 dark:text-gray-400">
+                    {steps.find(s => s.id === user.current_step)?.title || user.current_step}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Step Content */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             {steps.find(s => s.id === currentStep)?.title}
-            <span className="text-sm text-gray-500">
-              {steps.find(s => s.id === currentStep)?.estimatedTime}
-            </span>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-500">
+                {steps.find(s => s.id === currentStep)?.estimatedTime}
+              </span>
+              {/* Show who's currently on this step */}
+              {getActiveUsersForStep(currentStep).length > 0 && (
+                <Badge variant="secondary" className="text-xs">
+                  {getActiveUsersForStep(currentStep).length} active
+                </Badge>
+              )}
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">

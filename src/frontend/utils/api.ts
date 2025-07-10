@@ -268,3 +268,74 @@ export const completeOnboardingItem = async (item: string): Promise<any> => {
   });
   return response.json();
 }; 
+
+// Workshop live collaboration
+export async function updateWorkshopPresence(currentStep: string): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/workshop/presence`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_step: currentStep }),
+  });
+  return response.json();
+}
+
+export async function fetchWorkshopPresence(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/workshop/presence`);
+  return response.json();
+}
+
+export async function fetchWorkshopSync(since?: string): Promise<any> {
+  const params = since ? `?since=${since}` : '';
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/workshop/sync${params}`);
+  return response.json();
+}
+
+// Premium analytics
+export async function fetchPremiumAnalytics(dateRange: string = "30d"): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/analytics/premium?range=${dateRange}`);
+  return response.json();
+}
+
+// API key management
+export async function fetchApiKeys(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/api/keys`);
+  return response.json();
+}
+
+export async function createApiKey(name: string): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/api/keys`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  return response.json();
+}
+
+export async function revokeApiKey(keyId: string): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/api/keys/revoke`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key_id: keyId }),
+  });
+  return response.json();
+}
+
+// Workshop notification settings
+export async function fetchWorkshopNotificationSettings(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/workshop/notification-settings`);
+  return response.json();
+}
+
+export async function updateWorkshopNotificationSettings(settings: {
+  slack_enabled: boolean;
+  notify_goals_completed: boolean;
+  notify_plays_selected: boolean;
+  notify_workshop_completed: boolean;
+}): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/workshop/notification-settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  return response.json();
+} 

@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { fetchAnalyticsOverview } from "../utils/api";
+import { fetchAnalyticsOverview, fetchPremiumAnalytics } from "../utils/api";
+import { useAuth } from "../hooks/useAuth";
 
 interface AnalyticsData {
   playsCreated: number;
@@ -16,10 +17,33 @@ interface AnalyticsData {
   dateRange: string;
 }
 
+interface PremiumAnalyticsData {
+  analyticsData: Array<{
+    date: string;
+    ai_usage_count: number;
+    signals_logged: number;
+    plays_created: number;
+    workshop_completions: number;
+    mrr_amount: number;
+  }>;
+  summary: {
+    totalAIUsage: number;
+    totalSignals: number;
+    totalPlays: number;
+    totalWorkshops: number;
+    aiUsageFrequency: number;
+    mrrTrend: Array<{ date: string; mrr: number }>;
+  };
+  dateRange: string;
+}
+
 export default function Analytics() {
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [premiumData, setPremiumData] = useState<PremiumAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState("30d");
+  const { user } = useAuth();
+  const isPremium = user?.is_premium || false;
 
   useEffect(() => {
     loadAnalytics();
@@ -28,8 +52,13 @@ export default function Analytics() {
   async function loadAnalytics() {
     setLoading(true);
     try {
-      const result = await fetchAnalyticsOverview(dateRange);
-      setData(result);
+      const [basicResult, premiumResult] = await Promise.all([
+        fetchAnalyticsOverview(dateRange),
+        isPremium ? fetchPremiumAnalytics(dateRange) : Promise.resolve(null)
+      ]);
+      
+      setData(basicResult);
+      setPremiumData(premiumResult);
     } catch (error) {
       console.error("Failed to load analytics:", error);
     } finally {
@@ -57,6 +86,15 @@ export default function Analytics() {
     return { label: "Low", color: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200" };
   }
 
+  function formatCurrency(amount: number): string {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  }
+
   if (loading) {
     return (
       <div className="p-8">
@@ -72,6 +110,7 @@ export default function Analytics() {
           <h1 className="text-3xl font-bold mb-2">📊 Analytics Dashboard</h1>
           <p className="text-gray-600 dark:text-gray-400">
             Track your team's activity and performance
+            {isPremium && <Badge className="ml-2 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">Premium</Badge>}
           </p>
         </div>
         <div className="flex space-x-2">
@@ -129,6 +168,196 @@ export default function Analytics() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Premium Analytics Section */}
+      {isPremium && premiumData && (
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            💎 Premium Insights
+            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+              Premium Only
+            </Badge>
+          </h2>
+
+          {/* MRR Trend */}
+          <Card>
+            <CardHeader>
+              <CardTitle>💰 Monthly Recurring Revenue</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-2xl font-bold">
+                      {formatCurrency(premiumData.summary.mrrTrend[premiumData.summary.mrrTrend.length - 1]?.mrr || 0)}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Current MRR</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Growth Trend</p>
+                    <div className="flex items-center space-x-1">
+                      <span className="text-green-600">↗</span>
+                      <span className="text-sm font-medium">
+                        +{formatCurrency((premiumData.summary.mrrTrend[premiumData.summary.mrrTrend.length - 1]?.mrr || 0) - (premiumData.summary.mrrTrend[0]?.mrr || 0))}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Simple MRR chart */}
+                <div className="h-32 flex items-end space-x-2">
+                  {premiumData.summary.mrrTrend.map((point, index) => (
+                    <div key={index} className="flex-1 bg-blue-200 dark:bg-blue-800 rounded-t" 
+                         style={{ height: `${Math.max((point.mrr / 100) * 2, 4)}px` }}>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>{premiumData.summary.mrrTrend[0]?.date}</span>
+                  <span>{premiumData.summary.mrrTrend[premiumData.summary.mrrTrend.length - 1]?.date}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Enhanced Activity Breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>🤖 AI Usage Frequency</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <p className="text-3xl font-bold text-blue-600">{premiumData.summary.aiUsageFrequency}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Daily Average</p>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm">Total AI Usage</span>
+                      <span className="text-sm font-medium">{premiumData.summary.totalAIUsage}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm">Period Days</span>
+                      <span className="text-sm font-medium">{premiumData.analyticsData.length}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>📈 Activity Trends</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span>Workshop Completions</span>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div 
+                          className="bg-purple-600 h-2 rounded-full" 
+                          style={{ width: `${Math.min((premiumData.summary.totalWorkshops / 10) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-sm font-medium">{premiumData.summary.totalWorkshops}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Signal Quality</span>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div 
+                          className="bg-green-600 h-2 rounded-full" 
+                          style={{ width: `${Math.min((premiumData.summary.totalSignals / 100) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-sm font-medium">{premiumData.summary.totalSignals}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Play Effectiveness</span>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div 
+                          className="bg-blue-600 h-2 rounded-full" 
+                          style={{ width: `${Math.min((premiumData.summary.totalPlays / 20) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-sm font-medium">{premiumData.summary.totalPlays}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Premium Recommendations */}
+          <Card>
+            <CardHeader>
+              <CardTitle>💡 Premium Insights & Recommendations</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {premiumData.summary.aiUsageFrequency < 5 && (
+                  <div className="flex items-start space-x-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <span className="text-blue-600">🤖</span>
+                    <div>
+                      <p className="font-medium">Increase AI Usage</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Your team is using AI {premiumData.summary.aiUsageFrequency} times per day on average. 
+                        Consider encouraging more AI interactions for better insights.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {premiumData.summary.totalWorkshops === 0 && (
+                  <div className="flex items-start space-x-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                    <span className="text-yellow-600">🎯</span>
+                    <div>
+                      <p className="font-medium">Complete Your First Workshop</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Teams that complete workshops see 3x better signal tracking and 2x more AI usage.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {premiumData.summary.totalSignals > 50 && (
+                  <div className="flex items-start space-x-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <span className="text-green-600">📊</span>
+                    <div>
+                      <p className="font-medium">Excellent Signal Tracking</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        You've logged {premiumData.summary.totalSignals} signals! Consider using AI to analyze patterns.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {premiumData.summary.mrrTrend.length > 1 && 
+                 premiumData.summary.mrrTrend[premiumData.summary.mrrTrend.length - 1].mrr > 
+                 premiumData.summary.mrrTrend[0].mrr && (
+                  <div className="flex items-start space-x-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <span className="text-green-600">💰</span>
+                    <div>
+                      <p className="font-medium">Revenue Growth Detected</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Your MRR has grown by {formatCurrency(
+                          premiumData.summary.mrrTrend[premiumData.summary.mrrTrend.length - 1].mrr - 
+                          premiumData.summary.mrrTrend[0].mrr
+                        )} this period!
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Most Active User */}
       {data?.mostActiveUser && (
@@ -297,6 +526,18 @@ export default function Analytics() {
                   <p className="font-medium">Great Progress!</p>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     You're actively using Rhythm90. Consider running a workshop to optimize your setup.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!isPremium && (
+              <div className="flex items-start space-x-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                <span className="text-yellow-600">💎</span>
+                <div>
+                  <p className="font-medium">Upgrade to Premium</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Get advanced analytics, MRR tracking, and detailed insights to optimize your team's performance.
                   </p>
                 </div>
               </div>
