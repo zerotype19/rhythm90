@@ -108,9 +108,34 @@ export default function Admin() {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const { flags: featureFlags, isFeatureEnabled } = useFeatureFlags();
+  const [experimentMetrics, setExperimentMetrics] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [showAnnouncementForm, setShowAnnouncementForm] = useState(false);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
+  const [announcementForm, setAnnouncementForm] = useState({
+    title: '',
+    message: '',
+    link: '',
+    type: 'feature_update',
+    active: true
+  });
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     load();
+  }, []);
+
+  useEffect(() => {
+    async function fetchMetrics() {
+      const res = await fetch("/experiments/metrics");
+      const data = await res.json();
+      if (data.success) setExperimentMetrics(data.metrics);
+    }
+    fetchMetrics();
+  }, []);
+
+  useEffect(() => {
+    loadAnnouncements();
   }, []);
 
   async function load() {
@@ -167,6 +192,88 @@ export default function Admin() {
       setLoading(false);
     }
   }
+
+  async function loadAnnouncements() {
+    try {
+      const res = await fetch("/admin/announcements");
+      const data = await res.json();
+      if (data.success) {
+        setAnnouncements(data.announcements || []);
+      }
+    } catch (error) {
+      console.error("Failed to load announcements:", error);
+    }
+  }
+
+  const handleAnnouncementSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/admin/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(editingAnnouncement && { id: editingAnnouncement.id }),
+          ...announcementForm
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowAnnouncementForm(false);
+        setEditingAnnouncement(null);
+        setAnnouncementForm({
+          title: '',
+          message: '',
+          link: '',
+          type: 'feature_update',
+          active: true
+        });
+        loadAnnouncements();
+      }
+    } catch (error) {
+      console.error("Failed to save announcement:", error);
+    }
+  };
+
+  const handlePreview = async () => {
+    try {
+      const res = await fetch("/admin/announcements/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(announcementForm),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowPreview(true);
+      }
+    } catch (error) {
+      console.error("Failed to preview announcement:", error);
+    }
+  };
+
+  const editAnnouncement = (announcement: any) => {
+    setEditingAnnouncement(announcement);
+    setAnnouncementForm({
+      title: announcement.title,
+      message: announcement.message,
+      link: announcement.link || '',
+      type: announcement.type,
+      active: announcement.active
+    });
+    setShowAnnouncementForm(true);
+  };
+
+  const getTypeBadge = (type: string) => {
+    switch (type) {
+      case "feature_update":
+        return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Feature Update</Badge>;
+      case "bug_fix":
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Bug Fix</Badge>;
+      case "general_news":
+        return <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">News</Badge>;
+      default:
+        return <Badge variant="secondary">{type}</Badge>;
+    }
+  };
 
   async function toggleFeatureFlag(key: string, currentValue: boolean) {
     setUpdatingFlags(key);
@@ -797,6 +904,239 @@ export default function Admin() {
 
       {/* Subscription Management Section */}
       <SubscriptionManagementSection />
+
+      {/* Experiment Metrics Dashboard */}
+      <div className="my-8">
+        <h2 className="text-2xl font-bold mb-4">Experiment Metrics</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full bg-white dark:bg-gray-900 border rounded">
+            <thead>
+              <tr>
+                <th className="px-4 py-2">Experiment</th>
+                <th className="px-4 py-2">Variant</th>
+                <th className="px-4 py-2">Exposures</th>
+                <th className="px-4 py-2">Engagements</th>
+                <th className="px-4 py-2">Conversions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {experimentMetrics.map((row, idx) => (
+                <tr key={idx}>
+                  <td className="px-4 py-2">{row.name}</td>
+                  <td className="px-4 py-2">{row.variant}</td>
+                  <td className="px-4 py-2">{row.exposures}</td>
+                  <td className="px-4 py-2">{row.engagements}</td>
+                  <td className="px-4 py-2">{row.conversions}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {/* Experiment Preview Section */}
+      <div className="my-8">
+        <h2 className="text-2xl font-bold mb-4">Experiment Variant Preview</h2>
+        <div className="flex flex-wrap gap-6">
+          {/* Example: Preview for landing_cta experiment */}
+          {["A", "B", "C"].map((variant) => (
+            <div key={variant} className="border rounded p-4 min-w-[250px] bg-gray-50 dark:bg-gray-800">
+              <h3 className="font-semibold mb-2">Landing CTA Variant {variant}</h3>
+              <div className="mb-2">
+                <span className="font-medium">Headline: </span>
+                {variant === "B" ? "Ready to Supercharge Your Team?" : variant === "C" ? "Get Started with Rhythm90" : "Ready to Transform Your Marketing Operations?"}
+              </div>
+              <div className="mb-2">
+                <span className="font-medium">Primary Button: </span>
+                {variant === "C" ? "Get Started" : "Try Demo"}
+              </div>
+              <div>
+                <span className="font-medium">Secondary Button: </span>
+                {variant === "C" ? "Try Now" : "Learn More"}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Announcement Management Section */}
+      <div className="my-8">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold">Feature Announcements</h2>
+          <Button onClick={() => setShowAnnouncementForm(true)}>
+            Create Announcement
+          </Button>
+        </div>
+
+        {/* Announcement Form */}
+        {showAnnouncementForm && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>{editingAnnouncement ? 'Edit' : 'Create'} Announcement</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleAnnouncementSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Title</label>
+                  <Input
+                    value={announcementForm.title}
+                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="Announcement title"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Message</label>
+                  <textarea
+                    value={announcementForm.message}
+                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, message: e.target.value }))}
+                    placeholder="Announcement message (supports simple HTML: <b>, <a>, etc.)"
+                    className="w-full p-2 border rounded-md"
+                    rows={4}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Link (optional)</label>
+                  <Input
+                    value={announcementForm.link}
+                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, link: e.target.value }))}
+                    placeholder="https://example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Type</label>
+                  <select
+                    value={announcementForm.type}
+                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, type: e.target.value }))}
+                    className="w-full p-2 border rounded-md"
+                  >
+                    <option value="feature_update">Feature Update</option>
+                    <option value="bug_fix">Bug Fix</option>
+                    <option value="general_news">General News</option>
+                  </select>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="active"
+                    checked={announcementForm.active}
+                    onChange={(e) => setAnnouncementForm(prev => ({ ...prev, active: e.target.checked }))}
+                  />
+                  <label htmlFor="active" className="text-sm">Active (visible to users)</label>
+                </div>
+                <div className="flex space-x-2">
+                  <Button type="submit">
+                    {editingAnnouncement ? 'Update' : 'Create'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={handlePreview}>
+                    Preview
+                  </Button>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => {
+                      setShowAnnouncementForm(false);
+                      setEditingAnnouncement(null);
+                      setAnnouncementForm({
+                        title: '',
+                        message: '',
+                        link: '',
+                        type: 'feature_update',
+                        active: true
+                      });
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Announcements List */}
+        <div className="space-y-4">
+          {announcements.map((announcement) => (
+            <Card key={announcement.id}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <h3 className="font-semibold">{announcement.title}</h3>
+                      {getTypeBadge(announcement.type)}
+                      {announcement.active && (
+                        <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Active</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                      {announcement.message.substring(0, 100)}...
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Created: {new Date(announcement.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => editAnnouncement(announcement)}
+                  >
+                    Edit
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Preview</CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)}>
+                  ✕
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-2xl">🎉</span>
+                  <h3 className="font-semibold">What's New</h3>
+                </div>
+                <div className="flex items-center space-x-2">
+                  {getTypeBadge(announcementForm.type)}
+                  <span className="text-sm text-gray-500">Today</span>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">{announcementForm.title}</h4>
+                  <div 
+                    className="text-gray-700 dark:text-gray-300 prose prose-sm"
+                    dangerouslySetInnerHTML={{ 
+                      __html: announcementForm.message.replace(/\n/g, '<br>') 
+                    }}
+                  />
+                </div>
+                {announcementForm.link && (
+                  <div>
+                    <a 
+                      href={announcementForm.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                    >
+                      Learn more →
+                    </a>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

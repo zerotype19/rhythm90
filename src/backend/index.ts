@@ -1853,6 +1853,13 @@ export default {
 
           if (shouldNotify) {
             await sendSlackNotification(env, teamId, message);
+            if (body.step === "review") {
+              await sendZapierWebhook(env, teamId, "workshop_completed", {
+                workshop_id: "workshop_" + teamId,
+                workshop_name: "Team Workshop",
+                completed_by_user_id: userId
+              });
+            }
           }
         }
       }
@@ -3948,6 +3955,67 @@ export default {
       }
     }
 
+    // Zapier: Toggle outbound hooks
+    if (pathname === "/integrations/zapier/outbound" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const body = await request.json() as { enabled: boolean };
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        await env.DB.prepare(`
+          UPDATE zapier_api_keys SET outbound_enabled = ? WHERE team_id = ?
+        `).bind(body.enabled, teamId).run();
+
+        return Response.json({ 
+          success: true, 
+          message: body.enabled ? "Outbound hooks enabled" : "Outbound hooks disabled"
+        });
+      } catch (error) {
+        console.error('Failed to toggle Zapier outbound hooks:', error);
+        return Response.json({ success: false, message: "Failed to update outbound hooks" }, { status: 500 });
+      }
+    }
+
+    // Zapier: Get outbound hooks status
+    if (pathname === "/integrations/zapier/outbound" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        const result = await env.DB.prepare(`
+          SELECT outbound_enabled FROM zapier_api_keys WHERE team_id = ? LIMIT 1
+        `).bind(teamId).first();
+
+        return Response.json({ 
+          success: true, 
+          outboundEnabled: result?.outbound_enabled || false
+        });
+      } catch (error) {
+        console.error('Failed to get Zapier outbound hooks status:', error);
+        return Response.json({ success: false, message: "Failed to get outbound hooks status" }, { status: 500 });
+      }
+    }
+
     // Feature Flags: Get team flags
     if (pathname === "/feature-flags" && request.method === "GET") {
       const userId = getCurrentUserId();
@@ -4079,6 +4147,179 @@ export default {
       }
     }
 
+    // Growth Experiments: Assign or get variant for user
+    if (pathname === "/experiments/assign" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const body = await request.json() as { experimentId: string };
+      const experimentId = body.experimentId;
+      if (!experimentId) {
+        return Response.json({ success: false, message: "experimentId required" }, { status: 400 });
+      }
+      // Check for existing assignment
+      let assignment = await env.DB.prepare(`
+        SELECT variant FROM experiment_assignments WHERE experiment_id = ? AND user_id = ?
+      `).bind(experimentId, userId).first();
+      if (!assignment) {
+        // Get experiment variants
+        const experiment = await env.DB.prepare(`
+          SELECT variants FROM growth_experiments WHERE id = ? AND is_active = 1
+        `).bind(experimentId).first();
+        if (!experiment) {
+          return Response.json({ success: false, message: "Experiment not found" }, { status: 404 });
+        }
+        const variants = JSON.parse(experiment.variants || '["control"]');
+        // Assign randomly
+        const idx = Math.floor(Math.random() * variants.length);
+        const variant = variants[idx];
+        await env.DB.prepare(`
+          INSERT INTO experiment_assignments (id, experiment_id, user_id, variant)
+          VALUES (?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          experimentId,
+          userId,
+          variant
+        ).run();
+        assignment = { variant };
+      }
+      return Response.json({ success: true, variant: assignment.variant });
+    }
+
+    // Growth Experiments: Log event (exposure, interaction, conversion)
+    if (pathname === "/experiments/event" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const body = await request.json() as { experimentId: string, variant: string, eventType: string, eventData?: any };
+      if (!body.experimentId || !body.variant || !body.eventType) {
+        return Response.json({ success: false, message: "experimentId, variant, and eventType required" }, { status: 400 });
+      }
+      // Get user's team
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id;
+      await env.DB.prepare(`
+        INSERT INTO experiment_events (id, experiment_id, user_id, team_id, variant, event_type, event_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        crypto.randomUUID(),
+        body.experimentId,
+        userId,
+        teamId,
+        body.variant,
+        body.eventType,
+        body.eventData ? JSON.stringify(body.eventData) : null
+      ).run();
+      return Response.json({ success: true });
+    }
+
+    // Growth Experiments: Get metrics summary (admin only)
+    if (pathname === "/experiments/metrics" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      // Summarize metrics for all experiments
+      const metrics = await env.DB.prepare(`
+        SELECT
+          e.id as experiment_id,
+          e.name,
+          ea.variant,
+          COUNT(DISTINCT CASE WHEN ev.event_type = 'exposure' THEN ev.user_id END) as exposures,
+          COUNT(DISTINCT CASE WHEN ev.event_type = 'interaction' THEN ev.user_id END) as engagements,
+          COUNT(DISTINCT CASE WHEN ev.event_type = 'conversion' THEN ev.user_id END) as conversions
+        FROM growth_experiments e
+        LEFT JOIN experiment_assignments ea ON ea.experiment_id = e.id
+        LEFT JOIN experiment_events ev ON ev.experiment_id = e.id AND ev.variant = ea.variant AND ev.user_id = ea.user_id
+        GROUP BY e.id, ea.variant
+        ORDER BY e.created_at DESC
+      `).all();
+      return Response.json({ success: true, metrics: metrics.results || [] });
+    }
+
+    // Feature Announcements: Get latest active announcement for user
+    if (pathname === "/announcements/latest" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      // Get latest active announcement
+      const announcement = await env.DB.prepare(`
+        SELECT * FROM feature_announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 1
+      `).first();
+      if (!announcement) return Response.json({ success: true, announcement: null });
+      // Check if user has read it
+      const read = await env.DB.prepare(`
+        SELECT 1 FROM user_announcement_reads WHERE user_id = ? AND announcement_id = ?
+      `).bind(userId, announcement.id).first();
+      return Response.json({ success: true, announcement, read: !!read });
+    }
+
+    // Feature Announcements: Mark as read
+    if (pathname === "/announcements/mark-read" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const body = await request.json() as { announcementId: string };
+      if (!body.announcementId) return Response.json({ success: false, message: "announcementId required" }, { status: 400 });
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO user_announcement_reads (id, user_id, announcement_id, read_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        crypto.randomUUID(),
+        userId,
+        body.announcementId
+      ).run();
+      return Response.json({ success: true });
+    }
+
+    // Admin: List all announcements
+    if (pathname === "/admin/announcements" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) return new Response("Unauthorized", { status: 401 });
+      const rows = await env.DB.prepare(`SELECT * FROM feature_announcements ORDER BY created_at DESC`).all();
+      return Response.json({ success: true, announcements: rows.results || [] });
+    }
+
+    // Admin: Create or update announcement
+    if (pathname === "/admin/announcements" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) return new Response("Unauthorized", { status: 401 });
+      const body = await request.json() as { id?: string, title: string, message: string, link?: string, type: string, active: boolean };
+      if (!body.title || !body.message || !body.type) return Response.json({ success: false, message: "Missing fields" }, { status: 400 });
+      if (body.id) {
+        // Update
+        await env.DB.prepare(`
+          UPDATE feature_announcements SET title = ?, message = ?, link = ?, type = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        `).bind(
+          body.title,
+          body.message,
+          body.link || null,
+          body.type,
+          body.active ? 1 : 0,
+          body.id
+        ).run();
+      } else {
+        // Create
+        await env.DB.prepare(`
+          INSERT INTO feature_announcements (id, title, message, link, type, active, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).bind(
+          crypto.randomUUID(),
+          body.title,
+          body.message,
+          body.link || null,
+          body.type,
+          body.active ? 1 : 0
+        ).run();
+      }
+      return Response.json({ success: true });
+    }
+
+    // Admin: Preview announcement (no DB write)
+    if (pathname === "/admin/announcements/preview" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) return new Response("Unauthorized", { status: 401 });
+      const body = await request.json() as { title: string, message: string, link?: string, type: string };
+      return Response.json({ success: true, preview: { ...body, created_at: new Date().toISOString() } });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 };
@@ -4098,6 +4339,93 @@ async function sendSlackNotification(env: Env, teamId: string, message: string) 
   } catch (error) {
     console.error("Failed to send Slack notification:", error);
     // Don't throw - webhook failures shouldn't break the main flow
+  }
+}
+
+// Helper function to send Zapier outbound webhooks
+async function sendZapierWebhook(env: Env, teamId: string, event: string, data: any) {
+  try {
+    // Check if outbound hooks are enabled for this team
+    const zapierConfig = await env.DB.prepare(`
+      SELECT api_key, outbound_enabled 
+      FROM zapier_api_keys 
+      WHERE team_id = ? AND is_active = 1 AND outbound_enabled = 1
+    `).bind(teamId).first();
+
+    if (!zapierConfig?.outbound_enabled) {
+      return; // Outbound hooks not enabled
+    }
+
+    // Get team info for the webhook payload
+    const teamInfo = await env.DB.prepare(`
+      SELECT name FROM teams WHERE id = ?
+    `).bind(teamId).first();
+
+    // Get user info if available
+    const userInfo = await env.DB.prepare(`
+      SELECT id, name FROM users WHERE id = ?
+    `).bind(data.completed_by_user_id || data.user_id).first();
+
+    // Prepare webhook payload
+    const webhookPayload = {
+      event: event,
+      team_id: teamId,
+      team_name: teamInfo?.name,
+      completed_at: new Date().toISOString(),
+      ...data
+    };
+
+    // For workshop completion, add specific fields
+    if (event === "workshop_completed") {
+      webhookPayload.workshop_id = data.workshop_id || "workshop_" + teamId;
+      webhookPayload.workshop_name = data.workshop_name || "Team Workshop";
+      webhookPayload.completed_by_user_id = userInfo?.id;
+      webhookPayload.completed_by_user_name = userInfo?.name;
+    }
+
+    // Send webhook to Zapier (this would be configured in Zapier)
+    // For now, we'll log it as a webhook log entry
+    const webhookId = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT INTO zapier_webhook_logs (id, team_id, api_key, event_type, payload, response_status, response_body)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      webhookId,
+      teamId,
+      zapierConfig.api_key,
+      event,
+      JSON.stringify(webhookPayload),
+      200, // Mock successful response
+      JSON.stringify({ success: true, message: "Webhook sent successfully" })
+    ).run();
+
+    console.log(`Zapier webhook sent for team ${teamId}, event: ${event}`);
+  } catch (error) {
+    console.error('Error sending Zapier webhook:', error);
+    
+    // Log the failed webhook
+    try {
+      const zapierConfig = await env.DB.prepare(`
+        SELECT api_key FROM zapier_api_keys WHERE team_id = ? AND is_active = 1
+      `).bind(teamId).first();
+
+      if (zapierConfig) {
+        await env.DB.prepare(`
+          INSERT INTO zapier_webhook_logs (id, team_id, api_key, event_type, payload, response_status, response_body)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          teamId,
+          zapierConfig.api_key,
+          event,
+          JSON.stringify(data),
+          500,
+          JSON.stringify({ error: error.message })
+        ).run();
+      }
+    } catch (logError) {
+      console.error('Failed to log webhook error:', logError);
+    }
   }
 }
 

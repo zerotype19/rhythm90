@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
+import { useExperiment } from "../hooks/useExperiment";
 
 const plans = [
   {
@@ -48,6 +49,11 @@ const plans = [
 
 export default function Pricing() {
   const [loading, setLoading] = useState<string | null>(null);
+  const { variant: pricingVariant, logEvent } = useExperiment("pricing_display");
+
+  useEffect(() => {
+    if (pricingVariant) logEvent("exposure");
+  }, [pricingVariant]);
 
   const handleUpgrade = async (planName: string) => {
     setLoading(planName);
@@ -103,12 +109,12 @@ export default function Pricing() {
 
       {/* Pricing Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-        {plans.map((plan) => (
+        {plans.map((plan, idx) => (
           <Card 
             key={plan.name} 
             className={`relative transition-all hover:shadow-lg ${
               plan.popular ? 'ring-2 ring-rhythmRed scale-105' : ''
-            }`}
+            } ${pricingVariant === "B" && idx === 1 ? 'border-4 border-yellow-400' : ''}`}
           >
             {plan.popular && (
               <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-rhythmRed text-white">
@@ -161,7 +167,12 @@ export default function Pricing() {
                 variant={plan.buttonVariant}
                 className="w-full"
                 disabled={plan.disabled || loading === plan.name}
-                onClick={() => !plan.disabled && handleUpgrade(plan.name)}
+                onClick={() => {
+                  if (!plan.disabled) {
+                    logEvent("interaction", { plan: plan.name });
+                    handleUpgrade(plan.name);
+                  }
+                }}
               >
                 {loading === plan.name ? (
                   <>
@@ -169,7 +180,9 @@ export default function Pricing() {
                     Processing...
                   </>
                 ) : (
-                  plan.buttonText
+                  pricingVariant === "C" && plan.name === "Premium"
+                    ? "Try Now"
+                    : plan.buttonText
                 )}
               </Button>
             </CardContent>

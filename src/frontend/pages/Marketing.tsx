@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
+import { useExperiment } from "../hooks/useExperiment";
 
 const testimonials = [
   {
@@ -40,6 +41,12 @@ export default function Marketing() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  const { variant: heroVariant, logEvent } = useExperiment("marketing_hero");
+
+  useEffect(() => {
+    if (heroVariant) logEvent("exposure");
+  }, [heroVariant]);
+
   const handleWaitlistSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
@@ -75,26 +82,30 @@ export default function Marketing() {
             🚀 Now in Beta
           </Badge>
           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6">
-            Smarter Marketing Quarters Start Here
+            {heroVariant === "B"
+              ? "Smarter Marketing Starts Here"
+              : "Smarter Marketing Quarters Start Here"}
           </h1>
           <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-3xl mx-auto">
-            Rhythm90 helps marketing teams track, analyze, and act on marketing insights with AI-powered recommendations and collaborative tools.
+            {heroVariant === "C"
+              ? "AI-powered insights for every marketing team."
+              : "Rhythm90 helps marketing teams track, analyze, and act on marketing insights with AI-powered recommendations and collaborative tools."}
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button 
               size="lg" 
               className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3"
-              onClick={() => window.location.href = "/"}
+              onClick={() => { logEvent("interaction", { action: "Try Demo" }); window.location.href = "/"; }}
             >
-              Try Demo
+              {heroVariant === "C" ? "Get Started" : "Try Demo"}
             </Button>
             <Button 
               size="lg" 
               variant="outline" 
               className="px-8 py-3"
-              onClick={() => document.getElementById('waitlist')?.scrollIntoView({ behavior: 'smooth' })}
+              onClick={() => { logEvent("interaction", { action: "Join Waitlist" }); document.getElementById('waitlist')?.scrollIntoView({ behavior: 'smooth' }); }}
             >
-              Join Waitlist
+              {heroVariant === "C" ? "Try Now" : "Join Waitlist"}
             </Button>
           </div>
         </div>

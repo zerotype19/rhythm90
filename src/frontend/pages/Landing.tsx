@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Card, CardContent } from "../components/ui/card";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 import { useDemo } from "../contexts/DemoContext";
+import { useExperiment } from "../hooks/useExperiment";
 
 export default function Landing() {
   const [email, setEmail] = useState("");
@@ -12,6 +13,11 @@ export default function Landing() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { isDemoMode, loginAsDemo } = useDemo();
+  const { variant: ctaVariant, logEvent } = useExperiment("landing_cta");
+
+  useEffect(() => {
+    if (ctaVariant) logEvent("exposure");
+  }, [ctaVariant]);
 
   async function joinWaitlist() {
     if (!email.trim()) {
@@ -186,17 +192,23 @@ export default function Landing() {
       <div className="container mx-auto px-6 py-16">
         <div className="text-center">
           <h2 className="text-3xl font-bold text-rhythmBlack dark:text-white mb-4">
-            Ready to Transform Your Marketing Operations?
+            {ctaVariant === "B" ? "Ready to Supercharge Your Team?" : "Ready to Transform Your Marketing Operations?"}
           </h2>
           <p className="text-lg text-gray-600 dark:text-gray-300 mb-8">
-            Join the beta and be among the first to experience the future of marketing management.
+            {ctaVariant === "B"
+              ? "Get started with Rhythm90 and unlock your team's full potential."
+              : "Join the beta and be among the first to experience the future of marketing management."}
           </p>
           <div className="space-x-4">
             <Link to="/dashboard">
-              <Button size="lg">Try Demo</Button>
+              <Button size="lg" onClick={() => logEvent("interaction", { action: "Try Demo" })}>
+                {ctaVariant === "C" ? "Get Started" : "Try Demo"}
+              </Button>
             </Link>
             <Link to="/login">
-              <Button variant="outline" size="lg">Learn More</Button>
+              <Button variant="outline" size="lg" onClick={() => logEvent("interaction", { action: "Learn More" })}>
+                {ctaVariant === "C" ? "Try Now" : "Learn More"}
+              </Button>
             </Link>
           </div>
         </div>
