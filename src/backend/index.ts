@@ -7,6 +7,7 @@ export interface Env {
   APP_URL?: string;
   DEMO_MODE?: string;
   PREMIUM_MODE?: string;
+  TEST_MODE?: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   SLACK_CLIENT_ID?: string;
@@ -14,6 +15,8 @@ export interface Env {
   SLACK_SIGNING_SECRET?: string;
   MICROSOFT_CLIENT_ID?: string;
   MICROSOFT_CLIENT_SECRET?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
 }
 
 // Helper function to check if user is admin
@@ -41,6 +44,47 @@ function isPremiumMode(env: Env): boolean {
 async function isUserPremium(env: Env, userId: string): Promise<boolean> {
   const user = await env.DB.prepare(`SELECT is_premium FROM users WHERE id = ?`).bind(userId).first();
   return user?.is_premium === true;
+}
+
+// Helper function to check if test mode is enabled
+function isTestMode(env: Env): boolean {
+  return env.TEST_MODE === "true";
+}
+
+// Helper function to authenticate API key
+async function authenticateApiKey(env: Env, apiKey: string): Promise<{ teamId: string; scopes: string[] } | null> {
+  const key = await env.DB.prepare(`SELECT team_id, scopes, is_active FROM api_keys WHERE key = ? AND is_active = 1`).bind(apiKey).first();
+  if (!key) return null;
+  
+  // Update last used timestamp
+  await env.DB.prepare(`UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key = ?`).bind(apiKey).run();
+  
+  return {
+    teamId: key.team_id as string,
+    scopes: (key.scopes as string).split(',').map(s => s.trim())
+  };
+}
+
+// Helper function to check rate limits
+async function checkRateLimit(env: Env, teamId: string, endpoint: string): Promise<boolean> {
+  const team = await env.DB.prepare(`SELECT rate_limit_hourly, rate_limit_daily FROM teams WHERE id = ?`).bind(teamId).first();
+  if (!team) return false;
+  
+  const hourlyLimit = team.rate_limit_hourly as number || 1000;
+  const dailyLimit = team.rate_limit_daily as number || 10000;
+  
+  // Check hourly rate limit
+  const hourlyCount = await env.DB.prepare(`SELECT COUNT(*) as count FROM api_usage WHERE team_id = ? AND endpoint = ? AND created_at > datetime('now', '-1 hour')`).bind(teamId, endpoint).first();
+  if (hourlyCount && (hourlyCount.count as number) >= hourlyLimit) return false;
+  
+  // Check daily rate limit
+  const dailyCount = await env.DB.prepare(`SELECT COUNT(*) as count FROM api_usage WHERE team_id = ? AND endpoint = ? AND created_at > datetime('now', '-1 day')`).bind(teamId, endpoint).first();
+  if (dailyCount && (dailyCount.count as number) >= dailyLimit) return false;
+  
+  // Record usage
+  await env.DB.prepare(`INSERT INTO api_usage (id, team_id, endpoint, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`).bind(crypto.randomUUID(), teamId, endpoint).run();
+  
+  return true;
 }
 
 // Helper function to clean up expired password reset tokens
@@ -483,22 +527,179 @@ export default {
       return Response.json({ isAdmin: adminStatus });
     }
 
-    if (pathname === "/auth/google" && request.method === "POST") {
-      const body = await request.json() as { email: string; name: string };
-      const fakeUser = { id: "user-123", email: body.email, name: body.name, provider: "google", is_premium: false };
-      await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`)
-        .bind(fakeUser.id, fakeUser.email, fakeUser.name, fakeUser.provider, "member", fakeUser.is_premium)
-        .run();
-      return Response.json({ success: true, user: fakeUser });
+    // OAuth login redirects
+    if (pathname === "/auth/login/google" && request.method === "GET") {
+      const redirectUri = `${appUrl}/auth/callback/google`;
+      const state = crypto.randomUUID();
+      const scope = "openid email profile";
+      
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${env.GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${state}`;
+      
+      return Response.redirect(authUrl);
     }
 
-    if (pathname === "/auth/microsoft" && request.method === "POST") {
-      const body = await request.json() as { email: string; name: string };
-      const fakeUser = { id: "user-456", email: body.email, name: body.name, provider: "microsoft", is_premium: false };
-      await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`)
-        .bind(fakeUser.id, fakeUser.email, fakeUser.name, fakeUser.provider, "member", fakeUser.is_premium)
-        .run();
-      return Response.json({ success: true, user: fakeUser });
+    if (pathname === "/auth/login/microsoft" && request.method === "GET") {
+      const redirectUri = `${appUrl}/auth/callback/microsoft`;
+      const state = crypto.randomUUID();
+      const scope = "openid email profile";
+      
+      const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${env.MICROSOFT_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${state}`;
+      
+      return Response.redirect(authUrl);
+    }
+
+    if (pathname === "/auth/login/slack" && request.method === "GET") {
+      const redirectUri = `${appUrl}/auth/callback/slack`;
+      const state = crypto.randomUUID();
+      const scope = "identity.basic,identity.email,identity.avatar";
+      
+      const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${env.SLACK_CLIENT_ID}&scope=${encodeURIComponent(scope)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+      
+      return Response.redirect(authUrl);
+    }
+
+    // OAuth callbacks
+    if (pathname === "/auth/callback/google" && request.method === "GET") {
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      
+      if (!code) {
+        return Response.redirect(`${appUrl}/login?error=no_code`);
+      }
+
+      try {
+        // Exchange code for tokens
+        const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: env.GOOGLE_CLIENT_ID!,
+            client_secret: env.GOOGLE_CLIENT_SECRET!,
+            code,
+            grant_type: "authorization_code",
+            redirect_uri: `${appUrl}/auth/callback/google`
+          })
+        });
+
+        const tokenData = await tokenResponse.json() as { access_token: string; refresh_token?: string; expires_in: number };
+        
+        // Get user info
+        const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+          headers: { "Authorization": `Bearer ${tokenData.access_token}` }
+        });
+        
+        const userData = await userResponse.json() as { id: string; email: string; name: string; picture: string };
+        
+        // Create or update user
+        const userId = crypto.randomUUID();
+        await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`)
+          .bind(userId, userData.email, userData.name, "google", "member", false)
+          .run();
+        
+        // Store OAuth provider data
+        await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(userId, "google", userData.id, userData.email, userData.name, userData.picture, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000)
+          .run();
+        
+        return Response.redirect(`${appUrl}/dashboard?auth=success`);
+      } catch (error) {
+        console.error("Google OAuth error:", error);
+        return Response.redirect(`${appUrl}/login?error=oauth_failed`);
+      }
+    }
+
+    if (pathname === "/auth/callback/microsoft" && request.method === "GET") {
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      
+      if (!code) {
+        return Response.redirect(`${appUrl}/login?error=no_code`);
+      }
+
+      try {
+        // Exchange code for tokens
+        const tokenResponse = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: env.MICROSOFT_CLIENT_ID!,
+            client_secret: env.MICROSOFT_CLIENT_SECRET!,
+            code,
+            grant_type: "authorization_code",
+            redirect_uri: `${appUrl}/auth/callback/microsoft`
+          })
+        });
+
+        const tokenData = await tokenResponse.json() as { access_token: string; refresh_token?: string; expires_in: number };
+        
+        // Get user info
+        const userResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
+          headers: { "Authorization": `Bearer ${tokenData.access_token}` }
+        });
+        
+        const userData = await userResponse.json() as { id: string; userPrincipalName: string; displayName: string };
+        
+        // Create or update user
+        const userId = crypto.randomUUID();
+        await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`)
+          .bind(userId, userData.userPrincipalName, userData.displayName, "microsoft", "member", false)
+          .run();
+        
+        // Store OAuth provider data
+        await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(userId, "microsoft", userData.id, userData.userPrincipalName, userData.displayName, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000)
+          .run();
+        
+        return Response.redirect(`${appUrl}/dashboard?auth=success`);
+      } catch (error) {
+        console.error("Microsoft OAuth error:", error);
+        return Response.redirect(`${appUrl}/login?error=oauth_failed`);
+      }
+    }
+
+    if (pathname === "/auth/callback/slack" && request.method === "GET") {
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      
+      if (!code) {
+        return Response.redirect(`${appUrl}/login?error=no_code`);
+      }
+
+      try {
+        // Exchange code for tokens
+        const tokenResponse = await fetch("https://slack.com/api/oauth.v2.access", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: env.SLACK_CLIENT_ID!,
+            client_secret: env.SLACK_CLIENT_SECRET!,
+            code,
+            redirect_uri: `${appUrl}/auth/callback/slack`
+          })
+        });
+
+        const tokenData = await tokenResponse.json() as { 
+          access_token: string; 
+          authed_user: { id: string; name: string; email?: string; image_192?: string } 
+        };
+        
+        // Create or update user
+        const userId = crypto.randomUUID();
+        const email = tokenData.authed_user.email || `${tokenData.authed_user.id}@slack.com`;
+        await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`)
+          .bind(userId, email, tokenData.authed_user.name, "slack", "member", false)
+          .run();
+        
+        // Store OAuth provider data
+        await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(userId, "slack", tokenData.authed_user.id, email, tokenData.authed_user.name, tokenData.authed_user.image_192 || null, tokenData.access_token, Date.now() + 3600 * 1000)
+          .run();
+        
+        return Response.redirect(`${appUrl}/dashboard?auth=success`);
+      } catch (error) {
+        console.error("Slack OAuth error:", error);
+        return Response.redirect(`${appUrl}/login?error=oauth_failed`);
+      }
     }
 
     if (pathname === "/board" && request.method === "GET") {
@@ -614,7 +815,7 @@ export default {
       const userId = getCurrentUserId();
       const isPremium = await isUserPremium(env, userId);
       
-      if (!isPremium) {
+      if (!isPremium && !isTestMode(env)) {
         return Response.json({ success: false, message: "Premium subscription required" }, { status: 403 });
       }
 
@@ -702,7 +903,7 @@ export default {
       const userId = getCurrentUserId();
       const isPremium = await isUserPremium(env, userId);
       
-      if (!isPremium) {
+      if (!isPremium && !isTestMode(env)) {
         return Response.json({ success: false, message: "Premium subscription required" }, { status: 403 });
       }
 
@@ -1986,23 +2187,21 @@ export default {
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
       const teamId = userTeam?.team_id || "team-123";
       
-      const body = await request.json() as { name: string };
+      const body = await request.json() as { name: string; scopes?: string };
       
-      // Generate API key (simple for now, should be more secure in production)
+      // Generate API key
       const apiKey = `rk_${crypto.randomUUID().replace(/-/g, '')}`;
-      const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
-        .then(hash => Array.from(new Uint8Array(hash))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join(''));
+      const scopes = body.scopes || "read,write";
 
       await env.DB.prepare(`
-        INSERT INTO api_keys (id, team_id, key_hash, name, created_at, is_active)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE)
+        INSERT INTO api_keys (id, team_id, key, name, scopes, created_at, is_active)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE)
       `).bind(
         crypto.randomUUID(),
         teamId,
-        keyHash,
-        body.name
+        apiKey,
+        body.name,
+        scopes
       ).run();
 
       return Response.json({ 
@@ -2037,50 +2236,20 @@ export default {
         return Response.json({ error: "API key required" }, { status: 401 });
       }
 
-      // Validate API key and check rate limits
-      const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
-        .then(hash => Array.from(new Uint8Array(hash))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join(''));
-
-      const apiKeyRecord = await env.DB.prepare(`
-        SELECT ak.team_id, ak.is_active, ak.usage_count, ak.last_used_at
-        FROM api_keys ak
-        WHERE ak.key_hash = ? AND ak.is_active = TRUE
-      `).bind(keyHash).first();
-
-      if (!apiKeyRecord) {
+      // Authenticate API key
+      const auth = await authenticateApiKey(env, apiKey);
+      if (!auth) {
         return Response.json({ error: "Invalid API key" }, { status: 401 });
       }
 
-      // Check rate limits (1000/day for Free, 10000/day for Premium)
-      const team = await env.DB.prepare(`SELECT is_premium FROM teams WHERE id = ?`).bind(apiKeyRecord.team_id).first();
-      const dailyLimit = team?.is_premium ? 10000 : 1000;
-      
-      const today = new Date().toISOString().split('T')[0];
-      const todayUsage = await env.DB.prepare(`
-        SELECT COUNT(*) as count FROM api_usage 
-        WHERE api_key_hash = ? AND date(used_at) = ?
-      `).bind(keyHash, today).first();
-      
-      const usageCount = (todayUsage?.count as number) || 0;
-      if (usageCount >= dailyLimit) {
+      // Check rate limits
+      const rateLimitOk = await checkRateLimit(env, auth.teamId, "/api/plays");
+      if (!rateLimitOk) {
         return Response.json({ 
-          error: "Rate limit exceeded", 
-          limit: dailyLimit,
-          reset: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+          error: "Rate limit exceeded",
+          reset: new Date(Date.now() + 60 * 60 * 1000).toISOString()
         }, { status: 429 });
       }
-
-      // Update usage
-      await env.DB.prepare(`
-        INSERT INTO api_usage (id, api_key_hash, endpoint, used_at)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-      `).bind(crypto.randomUUID(), keyHash, '/api/plays').run();
-
-      await env.DB.prepare(`
-        UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
-      `).bind(keyHash).run();
 
       // Get plays for the team
       const plays = await env.DB.prepare(`
@@ -2088,7 +2257,7 @@ export default {
         FROM plays
         WHERE team_id = ?
         ORDER BY created_at DESC
-      `).bind(apiKeyRecord.team_id).all();
+      `).bind(auth.teamId).all();
 
       return addCorsHeaders(Response.json({ plays: plays.results }));
     }
@@ -2100,26 +2269,20 @@ export default {
         return Response.json({ error: "API key required" }, { status: 401 });
       }
 
-      // Validate API key
-      const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
-        .then(hash => Array.from(new Uint8Array(hash))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join(''));
-
-      const apiKeyRecord = await env.DB.prepare(`
-        SELECT ak.team_id, ak.is_active
-        FROM api_keys ak
-        WHERE ak.key_hash = ? AND ak.is_active = TRUE
-      `).bind(keyHash).first();
-
-      if (!apiKeyRecord) {
+      // Authenticate API key
+      const auth = await authenticateApiKey(env, apiKey);
+      if (!auth) {
         return Response.json({ error: "Invalid API key" }, { status: 401 });
       }
 
-      // Update last used
-      await env.DB.prepare(`
-        UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
-      `).bind(keyHash).run();
+      // Check rate limits
+      const rateLimitOk = await checkRateLimit(env, auth.teamId, "/api/signals");
+      if (!rateLimitOk) {
+        return Response.json({ 
+          error: "Rate limit exceeded",
+          reset: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+        }, { status: 429 });
+      }
 
       // Get signals for the team
       const signals = await env.DB.prepare(`
@@ -2128,7 +2291,7 @@ export default {
         JOIN plays p ON s.play_id = p.id
         WHERE p.team_id = ?
         ORDER BY s.created_at DESC
-      `).bind(apiKeyRecord.team_id).all();
+      `).bind(auth.teamId).all();
 
       return addCorsHeaders(Response.json({ signals: signals.results }));
     }
