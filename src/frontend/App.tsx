@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { AdminProvider } from "./contexts/AdminContext";
 import { DemoProvider } from "./contexts/DemoContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
 
 // Pages
 import Landing from "./pages/Landing";
@@ -29,43 +30,45 @@ import ResetPassword from "./pages/ResetPassword";
 
 function App() {
   return (
-    <DemoProvider>
-      <AdminProvider>
-        <Router>
-          <Routes>
-            {/* Public Routes */}
-            <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/pricing" element={<Pricing />} />
-            <Route path="/help" element={<Help />} />
-            <Route path="/marketing" element={<Marketing />} />
-            <Route path="/invite" element={<Invite />} />
-            <Route path="/accept-invite" element={<AcceptInvite />} />
-            <Route path="/request-password-reset" element={<RequestPasswordReset />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
+    <ThemeProvider>
+      <DemoProvider>
+        <AdminProvider>
+          <Router>
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/pricing" element={<Pricing />} />
+              <Route path="/help" element={<Help />} />
+              <Route path="/marketing" element={<Marketing />} />
+              <Route path="/invite" element={<Invite />} />
+              <Route path="/accept-invite" element={<AcceptInvite />} />
+              <Route path="/request-password-reset" element={<RequestPasswordReset />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
-            {/* App Routes */}
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="/admin/*" element={<Admin />} />
-            <Route path="/settings" element={<UserSettings />} />
-            <Route path="/settings/*" element={<UserSettings />} />
-            <Route path="/developer" element={<Developer />} />
-            <Route path="/developer/*" element={<Developer />} />
-            <Route path="/team" element={<Team />} />
-            <Route path="/workshop" element={<Workshop />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/integrations" element={<Integrations />} />
-            <Route path="/enterprise" element={<Enterprise />} />
-            <Route path="/referrals" element={<Referrals />} />
-            <Route path="/rnr-summary" element={<RnRSummary />} />
-            <Route path="/changelog" element={<Changelog />} />
-            <Route path="/training" element={<Training />} />
-            <Route path="/public-api" element={<PublicApi />} />
-          </Routes>
-        </Router>
-      </AdminProvider>
-    </DemoProvider>
+              {/* App Routes */}
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/admin" element={<Admin />} />
+              <Route path="/admin/*" element={<Admin />} />
+              <Route path="/settings" element={<UserSettings />} />
+              <Route path="/settings/*" element={<UserSettings />} />
+              <Route path="/developer" element={<Developer />} />
+              <Route path="/developer/*" element={<Developer />} />
+              <Route path="/team" element={<Team />} />
+              <Route path="/workshop" element={<Workshop />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/integrations" element={<Integrations />} />
+              <Route path="/enterprise" element={<Enterprise />} />
+              <Route path="/referrals" element={<Referrals />} />
+              <Route path="/rnr-summary" element={<RnRSummary />} />
+              <Route path="/changelog" element={<Changelog />} />
+              <Route path="/training" element={<Training />} />
+              <Route path="/public-api" element={<PublicApi />} />
+            </Routes>
+          </Router>
+        </AdminProvider>
+      </DemoProvider>
+    </ThemeProvider>
   );
 }
 

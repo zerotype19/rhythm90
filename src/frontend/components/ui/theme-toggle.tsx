@@ -1,30 +1,16 @@
-import { useState, useEffect } from "react";
 import { Button } from "./button";
+import { useTheme } from "../../contexts/ThemeContext";
 
 export function ThemeToggle() {
-  const [isDark, setIsDark] = useState(false);
+  const { theme, setTheme, resolvedTheme } = useTheme();
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-    
-    setIsDark(shouldBeDark);
-    if (shouldBeDark) {
-      document.documentElement.classList.add('dark');
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    const newTheme = !isDark;
-    setIsDark(newTheme);
-    
-    if (newTheme) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
+  const cycleTheme = () => {
+    if (theme === 'light') {
+      setTheme('dark');
+    } else if (theme === 'dark') {
+      setTheme('system');
     } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+      setTheme('light');
     }
   };
 
@@ -32,10 +18,11 @@ export function ThemeToggle() {
     <Button
       variant="ghost"
       size="icon"
-      onClick={toggleTheme}
+      onClick={cycleTheme}
       className="w-9 h-9"
+      title={`Current theme: ${theme === 'system' ? 'system' : theme} (${resolvedTheme})`}
     >
-      {isDark ? (
+      {resolvedTheme === 'dark' ? (
         <SunIcon className="h-4 w-4" />
       ) : (
         <MoonIcon className="h-4 w-4" />

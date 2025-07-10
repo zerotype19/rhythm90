@@ -4,6 +4,7 @@ export default {
     "./src/frontend/index.html",
     "./src/frontend/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
