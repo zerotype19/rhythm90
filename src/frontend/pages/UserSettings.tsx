@@ -237,16 +237,19 @@ export default function UserSettings() {
             <Button 
               onClick={async () => {
                 try {
-                  const res = await fetch(`${import.meta.env.VITE_API_URL}/create-checkout-session`, {
+                  const res = await fetch(`${import.meta.env.VITE_API_URL}/create-customer-portal-session`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ plan: "premium" }),
+                    body: JSON.stringify({}),
                   });
                   const data = await res.json();
-                  if (data.success && data.checkoutUrl) {
-                    window.location.href = data.checkoutUrl;
+                  if (data.success && data.portalUrl) {
+                    window.location.href = data.portalUrl;
+                  } else if (data.needsUpgrade) {
+                    alert(data.message);
+                    window.location.href = "/pricing";
                   } else {
-                    alert("Failed to create checkout session");
+                    alert("Failed to access billing portal");
                   }
                 } catch (error) {
                   console.error("Billing error:", error);

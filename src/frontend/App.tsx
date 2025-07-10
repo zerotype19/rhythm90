@@ -18,6 +18,7 @@ import RequestPasswordReset from './pages/RequestPasswordReset';
 import ResetPassword from './pages/ResetPassword';
 import Pricing from './pages/Pricing';
 import Help from './pages/Help';
+import Marketing from "./pages/Marketing";
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
 
 // Component to track page views
@@ -58,6 +59,7 @@ export default function App() {
                 <Route path="/request-password-reset" element={<RequestPasswordReset />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/pricing" element={<Pricing />} />
+                <Route path="/marketing" element={<Marketing />} />
               </Routes>
             </main>
             <Footer />

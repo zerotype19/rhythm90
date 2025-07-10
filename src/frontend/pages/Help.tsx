@@ -1,5 +1,7 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { Input } from "../components/ui/input";
 
 interface FAQItem {
   question: string;
@@ -36,35 +38,80 @@ const faqData: FAQItem[] = [
 ];
 
 export default function Help() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filteredFaqs, setFilteredFaqs] = useState<FAQItem[]>(faqData);
+
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredFaqs(faqData);
+      return;
+    }
+
+    const filtered = faqData.filter(faq => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        faq.question.toLowerCase().includes(searchLower) ||
+        faq.answer.toLowerCase().includes(searchLower)
+      );
+    });
+    setFilteredFaqs(filtered);
+  }, [searchTerm]);
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="text-center mb-8">
         <h1 className="text-4xl font-bold mb-4">Help Center</h1>
-        <p className="text-lg text-gray-600 dark:text-gray-400">
+        <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
           Find answers to common questions about Rhythm90
         </p>
+        
+        {/* Search Bar */}
+        <div className="max-w-md mx-auto">
+          <Input
+            type="text"
+            placeholder="Search questions and answers..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full"
+          />
+          {searchTerm && (
+            <p className="text-sm text-gray-500 mt-2">
+              Found {filteredFaqs.length} result{filteredFaqs.length !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="space-y-6">
-        {faqData.map((faq, index) => (
-          <Card key={index} className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xl">{faq.question}</CardTitle>
-                {faq.category && (
-                  <Badge variant="secondary" className="text-xs">
-                    {faq.category}
-                  </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                {faq.answer}
+        {filteredFaqs.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-gray-500 dark:text-gray-400">
+                No results found for "{searchTerm}". Try a different search term.
               </p>
             </CardContent>
           </Card>
-        ))}
+        ) : (
+          filteredFaqs.map((faq, index) => (
+            <Card key={index} className="hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xl">{faq.question}</CardTitle>
+                  {faq.category && (
+                    <Badge variant="secondary" className="text-xs">
+                      {faq.category}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                  {faq.answer}
+                </p>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       <Card className="mt-12 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
@@ -88,6 +135,22 @@ export default function Help() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Crisp Chat Widget Placeholder */}
+      <div className="fixed bottom-4 right-4 z-50">
+        <button
+          onClick={() => {
+            // TODO: Initialize Crisp chat widget
+            alert("Chat widget coming soon! For now, please email us at support@rhythm90.io");
+          }}
+          className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition-all hover:scale-110"
+          title="Chat with us"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 } 

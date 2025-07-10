@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Link } from "react-router-dom";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
+import { Badge } from "../components/ui/badge";
 
 interface Team {
   id: string;
@@ -24,13 +25,22 @@ interface Invite {
   invited_by_name?: string;
 }
 
+interface InvitesData {
+  activeInvites: Invite[];
+  expiredInvites: Invite[];
+  totalActive: number;
+  totalExpired: number;
+}
+
 export default function Admin() {
   const [adminData, setAdminData] = useState<AdminData | null>(null);
-  const [invites, setInvites] = useState<Invite[]>([]);
+  const [invites, setInvites] = useState<InvitesData>({ activeInvites: [], expiredInvites: [], totalActive: 0, totalExpired: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingFlags, setUpdatingFlags] = useState<string | null>(null);
   const [cancelingInvite, setCancelingInvite] = useState<string | null>(null);
+  const [resendingInvite, setResendingInvite] = useState<string | null>(null);
+  const [expiringInvite, setExpiringInvite] = useState<string | null>(null);
   const featureFlags = useFeatureFlags();
 
   useEffect(() => {
@@ -50,7 +60,7 @@ export default function Admin() {
         
         if (invitesRes.ok) {
           const invitesData = await invitesRes.json();
-          setInvites(invitesData.invites || []);
+          setInvites(invitesData);
         }
       } catch (error) {
         setError(error instanceof Error ? error.message : "Failed to load admin data");
@@ -104,12 +114,75 @@ export default function Admin() {
       }
 
       // Remove invite from state
-      setInvites(invites.filter(invite => invite.id !== inviteId));
+      setInvites(prev => ({
+        ...prev,
+        activeInvites: prev.activeInvites.filter(invite => invite.id !== inviteId),
+        totalActive: prev.totalActive - 1
+      }));
     } catch (error) {
       console.error("Failed to cancel invite:", error);
       alert("Failed to cancel invite. Please try again.");
     } finally {
       setCancelingInvite(null);
+    }
+  }
+
+  async function resendInvite(inviteId: string) {
+    setResendingInvite(inviteId);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites/resend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invite_id: inviteId }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to resend invite");
+      }
+
+      const data = await res.json();
+      if (data.success && data.inviteLink) {
+        // Copy link to clipboard
+        navigator.clipboard.writeText(data.inviteLink);
+        alert("New invite link copied to clipboard!");
+      }
+    } catch (error) {
+      console.error("Failed to resend invite:", error);
+      alert("Failed to resend invite. Please try again.");
+    } finally {
+      setResendingInvite(null);
+    }
+  }
+
+  async function expireInvite(inviteId: string) {
+    setExpiringInvite(inviteId);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites/expire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invite_id: inviteId }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to expire invite");
+      }
+
+      // Move invite from active to expired
+      const inviteToMove = invites.activeInvites.find(invite => invite.id === inviteId);
+      if (inviteToMove) {
+        setInvites(prev => ({
+          ...prev,
+          activeInvites: prev.activeInvites.filter(invite => invite.id !== inviteId),
+          expiredInvites: [inviteToMove, ...prev.expiredInvites],
+          totalActive: prev.totalActive - 1,
+          totalExpired: prev.totalExpired + 1
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to expire invite:", error);
+      alert("Failed to expire invite. Please try again.");
+    } finally {
+      setExpiringInvite(null);
     }
   }
 
@@ -180,14 +253,14 @@ export default function Admin() {
         {/* Pending Invites Section */}
         <Card>
           <CardHeader>
-            <CardTitle>Pending Invites ({invites.length})</CardTitle>
+            <CardTitle>Pending Invites ({invites.activeInvites.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            {invites.length === 0 ? (
+            {invites.activeInvites.length === 0 ? (
               <p className="text-gray-500">No pending invites.</p>
             ) : (
               <div className="space-y-3">
-                {invites.map((invite) => (
+                {invites.activeInvites.map((invite) => (
                   <div key={invite.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
@@ -204,14 +277,32 @@ export default function Admin() {
                           </p>
                         )}
                       </div>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => cancelInvite(invite.id)}
-                        disabled={cancelingInvite === invite.id}
-                      >
-                        {cancelingInvite === invite.id ? "Canceling..." : "Cancel"}
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => cancelInvite(invite.id)}
+                          disabled={cancelingInvite === invite.id}
+                        >
+                          {cancelingInvite === invite.id ? "Canceling..." : "Cancel"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => resendInvite(invite.id)}
+                          disabled={resendingInvite === invite.id}
+                        >
+                          {resendingInvite === invite.id ? "Resending..." : "Resend"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => expireInvite(invite.id)}
+                          disabled={expiringInvite === invite.id}
+                        >
+                          {expiringInvite === invite.id ? "Expiring..." : "Expire"}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -219,6 +310,42 @@ export default function Admin() {
             )}
           </CardContent>
         </Card>
+
+        {/* Expired Invites Section */}
+        {invites.expiredInvites.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Expired Invites ({invites.expiredInvites.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {invites.expiredInvites.map((invite) => (
+                  <div key={invite.id} className="border rounded-lg p-4 bg-gray-100 dark:bg-gray-900 opacity-75">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-600 dark:text-gray-400">{invite.email}</h3>
+                        <p className="text-sm text-gray-500">
+                          Invited: {new Date(invite.created_at).toLocaleDateString()}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Expired: {new Date(invite.expires_at).toLocaleDateString()}
+                        </p>
+                        {invite.invited_by_name && (
+                          <p className="text-xs text-gray-400">
+                            By: {invite.invited_by_name}
+                          </p>
+                        )}
+                      </div>
+                      <Badge variant="secondary" className="text-xs">
+                        Expired
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Feature Flags Section */}
         <Card>

@@ -333,6 +333,57 @@ export default {
       }
     }
 
+    if (pathname === "/create-customer-portal-session" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const appUrl = env.APP_URL || "https://rhythm90.io";
+      
+      try {
+        // Get user's team
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam && typeof userTeam.team_id === 'string' ? userTeam.team_id : "default-team";
+        
+        // Check if team has Stripe customer ID
+        const team = await env.DB.prepare(`SELECT stripe_customer_id FROM teams WHERE id = ?`).bind(teamId).first();
+        
+        if (!team || !team.stripe_customer_id) {
+          return Response.json({ 
+            success: false, 
+            message: "⚠️ Billing not set up yet. Please upgrade to access billing management.",
+            needsUpgrade: true
+          }, { status: 400 });
+        }
+
+        // Create customer portal session via Stripe API
+        const portalRes = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            customer: String(team.stripe_customer_id),
+            return_url: `${appUrl}/dashboard`
+          })
+        });
+        
+        const portalData = await portalRes.json() as any;
+        if (!portalRes.ok || !portalData.url) {
+          throw new Error('Failed to create Stripe customer portal session');
+        }
+
+        return Response.json({ 
+          success: true, 
+          portalUrl: portalData.url
+        });
+      } catch (error) {
+        console.error('Stripe portal error:', error);
+        return Response.json({ 
+          success: false, 
+          message: "Failed to access billing portal" 
+        }, { status: 500 });
+      }
+    }
+
     // Premium features
     if (pathname === "/checkout" && request.method === "POST") {
       const userId = getCurrentUserId();
@@ -679,16 +730,29 @@ export default {
         return new Response("Unauthorized", { status: 401 });
       }
 
-      // Get all pending invites (not expired, not accepted)
-      const invites = await env.DB.prepare(`
+      // Get all invites (active and expired)
+      const allInvites = await env.DB.prepare(`
         SELECT i.*, u.name as invited_by_name 
         FROM invites i 
         LEFT JOIN users u ON i.invited_by = u.id 
-        WHERE i.accepted = 0 AND i.expires_at > CURRENT_TIMESTAMP 
         ORDER BY i.created_at DESC
       `).all();
       
-      return Response.json({ invites: invites.results });
+      // Separate active and expired invites
+      const now = new Date().toISOString();
+      const activeInvites = allInvites.results.filter((invite: any) => 
+        invite.accepted === 0 && invite.expires_at > now
+      );
+      const expiredInvites = allInvites.results.filter((invite: any) => 
+        invite.accepted === 0 && invite.expires_at <= now
+      );
+      
+      return Response.json({ 
+        activeInvites, 
+        expiredInvites,
+        totalActive: activeInvites.length,
+        totalExpired: expiredInvites.length
+      });
     }
 
     if (pathname === "/admin/invites/cancel" && request.method === "POST") {
@@ -703,6 +767,69 @@ export default {
       
       // Delete the invite
       await env.DB.prepare(`DELETE FROM invites WHERE id = ?`).bind(body.invite_id).run();
+      
+      // Log admin action
+      await env.DB.prepare(`INSERT INTO admin_actions (id, admin_user_id, action_type, target_type, target_id, details) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), userId, "invite_canceled", "invite", body.invite_id, "Invite canceled by admin")
+        .run();
+      
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/admin/invites/resend" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { invite_id: string };
+      const appUrl = env.APP_URL || "https://rhythm90.io";
+      
+      // Get the invite
+      const invite = await env.DB.prepare(`SELECT * FROM invites WHERE id = ?`).bind(body.invite_id).first();
+      if (!invite) {
+        return Response.json({ success: false, message: "Invite not found" }, { status: 404 });
+      }
+      
+      // Generate new token and expiration
+      const newToken = crypto.randomUUID();
+      const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+      
+      // Update the invite
+      await env.DB.prepare(`UPDATE invites SET token = ?, expires_at = ? WHERE id = ?`)
+        .bind(newToken, newExpiresAt, body.invite_id)
+        .run();
+      
+      // Log admin action
+      await env.DB.prepare(`INSERT INTO admin_actions (id, admin_user_id, action_type, target_type, target_id, details) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), userId, "invite_resent", "invite", body.invite_id, `Invite resent for ${invite.email}`)
+        .run();
+      
+      const inviteLink = `${appUrl}/accept-invite?token=${newToken}`;
+      return Response.json({ success: true, inviteLink });
+    }
+
+    if (pathname === "/admin/invites/expire" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { invite_id: string };
+      
+      // Mark invite as expired (soft delete)
+      await env.DB.prepare(`UPDATE invites SET expires_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .bind(body.invite_id)
+        .run();
+      
+      // Log admin action
+      await env.DB.prepare(`INSERT INTO admin_actions (id, admin_user_id, action_type, target_type, target_id, details) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), userId, "invite_expired", "invite", body.invite_id, "Invite manually expired by admin")
+        .run();
       
       return Response.json({ success: true });
     }
