@@ -9,6 +9,7 @@ import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 import { Link } from "react-router-dom";
 import { fetchTeamMembersWithRoles, updateTeamMemberRole, removeTeamMemberFromTeam } from "../utils/api";
 import { fetchSlackSettings } from "../utils/api";
+import { sendNotification } from "../utils/api";
 
 interface Team {
   id: string;
@@ -602,6 +603,9 @@ export default function Admin() {
 
       {/* Slack Integration Section */}
       <SlackIntegrationSection />
+
+      {/* Notification Sending Section */}
+      <NotificationSendingSection />
     </div>
   );
 }
@@ -889,6 +893,156 @@ function SlackIntegrationSection() {
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+} 
+
+// Notification Sending Section Component
+function NotificationSendingSection() {
+  const [sending, setSending] = useState(false);
+  const [notificationForm, setNotificationForm] = useState({
+    title: "",
+    message: "",
+    type: "info",
+    priority: "normal",
+    action_url: "",
+    action_text: "",
+    user_id: "",
+    team_id: ""
+  });
+
+  async function handleSendNotification(e: React.FormEvent) {
+    e.preventDefault();
+    setSending(true);
+    
+    try {
+      await sendNotification(notificationForm);
+      alert("Notification sent successfully!");
+      setNotificationForm({
+        title: "",
+        message: "",
+        type: "info",
+        priority: "normal",
+        action_url: "",
+        action_text: "",
+        user_id: "",
+        team_id: ""
+      });
+    } catch (error) {
+      console.error("Failed to send notification:", error);
+      alert("Failed to send notification. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          🔔 Send Notifications
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSendNotification} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Title
+              </label>
+              <Input
+                value={notificationForm.title}
+                onChange={(e) => setNotificationForm(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Notification title"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Type
+              </label>
+              <select
+                value={notificationForm.type}
+                onChange={(e) => setNotificationForm(prev => ({ ...prev, type: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                <option value="info">Info</option>
+                <option value="success">Success</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Message
+            </label>
+            <textarea
+              value={notificationForm.message}
+              onChange={(e) => setNotificationForm(prev => ({ ...prev, message: e.target.value }))}
+              placeholder="Notification message"
+              required
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Priority
+              </label>
+              <select
+                value={notificationForm.priority}
+                onChange={(e) => setNotificationForm(prev => ({ ...prev, priority: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Action URL (optional)
+              </label>
+              <Input
+                value={notificationForm.action_url}
+                onChange={(e) => setNotificationForm(prev => ({ ...prev, action_url: e.target.value }))}
+                placeholder="https://..."
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Action Text (optional)
+              </label>
+              <Input
+                value={notificationForm.action_text}
+                onChange={(e) => setNotificationForm(prev => ({ ...prev, action_text: e.target.value }))}
+                placeholder="View Details"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Target User ID (optional)
+              </label>
+              <Input
+                value={notificationForm.user_id}
+                onChange={(e) => setNotificationForm(prev => ({ ...prev, user_id: e.target.value }))}
+                placeholder="Leave empty for team-wide"
+              />
+            </div>
+          </div>
+
+          <Button type="submit" disabled={sending} className="w-full">
+            {sending ? "Sending..." : "Send Notification"}
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );

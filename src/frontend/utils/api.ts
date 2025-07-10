@@ -118,6 +118,64 @@ export async function fetchWorkshopStatus(): Promise<any> {
   return response.json();
 }
 
+// Enhanced workshop functions
+export async function fetchWorkshopSteps(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/workshop`);
+  return response.json();
+}
+
+export async function updateWorkshopProgress(params: {
+  step: string;
+  status: string;
+  data?: string;
+}): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/workshop/progress`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  return response.json();
+}
+
+// Analytics
+export async function fetchAnalyticsOverview(dateRange: string = "30d"): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/analytics/overview?range=${dateRange}`);
+  return response.json();
+}
+
+// Enhanced notifications
+export async function fetchNotifications(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/notifications`);
+  return response.json();
+}
+
+export async function markNotificationRead(notificationId: string): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/notifications/mark-read`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notification_id: notificationId }),
+  });
+  return response.json();
+}
+
+export async function sendNotification(params: {
+  title: string;
+  message: string;
+  type?: string;
+  priority?: string;
+  action_url?: string;
+  action_text?: string;
+  user_id?: string;
+  team_id?: string;
+}): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/notifications/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  return response.json();
+}
+
 export const fetchTeamMembers = async (): Promise<any[]> => {
   const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/team`);
   return response.json();
@@ -157,11 +215,6 @@ export const saveRnRSummary = async (summary: string): Promise<any> => {
 
 export const fetchDashboardStats = async (): Promise<any> => {
   const response = await fetch(`${import.meta.env.VITE_API_URL}/dashboard-stats`);
-  return response.json();
-};
-
-export const fetchNotifications = async (): Promise<any[]> => {
-  const response = await fetch(`${import.meta.env.VITE_API_URL}/notifications`);
   return response.json();
 };
 

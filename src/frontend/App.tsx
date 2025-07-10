@@ -20,6 +20,8 @@ import Pricing from './pages/Pricing';
 import Help from './pages/Help';
 import Marketing from "./pages/Marketing";
 import Changelog from './pages/Changelog';
+import Workshop from './pages/Workshop';
+import Analytics from './pages/Analytics';
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
 
 // Component to track page views
@@ -50,6 +52,8 @@ export default function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/team" element={<Team />} />
                 <Route path="/training" element={<Training />} />
+                <Route path="/workshop" element={<Workshop />} />
+                <Route path="/analytics" element={<Analytics />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/rnr-summary" element={<RnRSummary />} />
                 <Route path="/admin" element={<Admin />} />

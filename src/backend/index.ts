@@ -1421,12 +1421,278 @@ export default {
       return Response.json({ templates: templates.results });
     }
 
-    // Workshop route (placeholder)
-    if (pathname === "/workshop" && request.method === "GET") {
-      return Response.json({ 
-        status: "ok", 
-        message: "Workshop mode coming soon." 
+    // Enhanced notifications routes
+    if (pathname === "/notifications" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      const notifications = await env.DB.prepare(`
+        SELECT id, title, message, type, priority, action_url, action_text, is_read, created_at
+        FROM notifications
+        WHERE (user_id = ? OR team_id = ? OR (user_id IS NULL AND team_id IS NULL))
+        ORDER BY created_at DESC
+        LIMIT 10
+      `).bind(userId, teamId).all();
+
+      return Response.json({ notifications: notifications.results });
+    }
+
+    if (pathname === "/notifications/mark-read" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const body = await request.json() as { notification_id: string };
+
+      await env.DB.prepare(`
+        UPDATE notifications 
+        SET is_read = TRUE 
+        WHERE id = ? AND (user_id = ? OR team_id IN (SELECT team_id FROM team_users WHERE user_id = ?))
+      `).bind(body.notification_id, userId, userId).run();
+
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/notifications/send" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as {
+        title: string;
+        message: string;
+        type?: string;
+        priority?: string;
+        action_url?: string;
+        action_text?: string;
+        user_id?: string;
+        team_id?: string;
+      };
+
+      await env.DB.prepare(`
+        INSERT INTO notifications 
+        (id, title, message, type, priority, action_url, action_text, user_id, team_id, is_read, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP)
+      `).bind(
+        crypto.randomUUID(),
+        body.title,
+        body.message,
+        body.type || "info",
+        body.priority || "normal",
+        body.action_url || null,
+        body.action_text || null,
+        body.user_id || null,
+        body.team_id || null
+      ).run();
+
+      return Response.json({ success: true });
+    }
+
+    // Analytics routes
+    if (pathname === "/analytics/overview" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const dateRange = url.searchParams.get("range") || "30d";
+      let dateFilter = "";
+      
+      switch (dateRange) {
+        case "7d":
+          dateFilter = "AND created_at > datetime('now', '-7 days')";
+          break;
+        case "30d":
+          dateFilter = "AND created_at > datetime('now', '-30 days')";
+          break;
+        case "all":
+        default:
+          dateFilter = "";
+          break;
+      }
+
+      // Get plays created
+      const playsResult = await env.DB.prepare(`
+        SELECT COUNT(*) as count FROM plays 
+        WHERE team_id = ? ${dateFilter}
+      `).bind(teamId).first();
+      const playsCreated = playsResult?.count as number || 0;
+
+      // Get signals logged
+      const signalsResult = await env.DB.prepare(`
+        SELECT COUNT(*) as count FROM signals s
+        JOIN plays p ON s.play_id = p.id
+        WHERE p.team_id = ? ${dateFilter}
+      `).bind(teamId).first();
+      const signalsLogged = signalsResult?.count as number || 0;
+
+      // Get AI usage
+      const aiUsageResult = await env.DB.prepare(`
+        SELECT SUM(count) as total FROM ai_usage 
+        WHERE team_id = ? ${dateFilter}
+      `).bind(teamId).first();
+      const aiUsageCount = aiUsageResult?.total as number || 0;
+
+      // Get most active user
+      const mostActiveResult = await env.DB.prepare(`
+        SELECT 
+          u.name,
+          u.email,
+          COUNT(DISTINCT p.id) as play_count,
+          COUNT(DISTINCT s.id) as signal_count,
+          COALESCE(SUM(au.count), 0) as ai_count
+        FROM users u
+        LEFT JOIN plays p ON u.id = p.id ${dateFilter ? "AND p.created_at > datetime('now', '-30 days')" : ""}
+        LEFT JOIN signals s ON p.id = s.play_id ${dateFilter ? "AND s.created_at > datetime('now', '-30 days')" : ""}
+        LEFT JOIN ai_usage au ON u.id = au.user_id ${dateFilter ? "AND au.updated_at > datetime('now', '-30 days')" : ""}
+        WHERE u.id IN (SELECT user_id FROM team_users WHERE team_id = ?)
+        GROUP BY u.id, u.name, u.email
+        ORDER BY (play_count + signal_count + ai_count) DESC
+        LIMIT 1
+      `).bind(teamId).first();
+
+      return Response.json({
+        playsCreated,
+        signalsLogged,
+        aiUsageCount,
+        mostActiveUser: mostActiveResult ? {
+          name: mostActiveResult.name,
+          email: mostActiveResult.email,
+          activityScore: (mostActiveResult.play_count as number || 0) + 
+                        (mostActiveResult.signal_count as number || 0) + 
+                        (mostActiveResult.ai_count as number || 0)
+        } : null,
+        dateRange
       });
+    }
+
+    // Workshop routes
+    if (pathname === "/workshop" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      // Get workshop progress
+      const progress = await env.DB.prepare(`
+        SELECT step, status, data, started_at, completed_at
+        FROM workshop_step_progress
+        WHERE user_id = ? AND team_id = ?
+        ORDER BY created_at ASC
+      `).bind(userId, teamId).all();
+
+      // Define workshop steps with metadata
+      const steps = [
+        {
+          id: "goals",
+          title: "Define Team Goals",
+          description: "Set clear objectives for your marketing strategy",
+          estimatedTime: "5-10 minutes",
+          status: "pending"
+        },
+        {
+          id: "plays",
+          title: "Select Plays",
+          description: "Choose from templates or create custom plays",
+          estimatedTime: "10-15 minutes",
+          status: "pending"
+        },
+        {
+          id: "owners",
+          title: "Assign Owners",
+          description: "Assign team members to each play",
+          estimatedTime: "5 minutes",
+          status: "pending"
+        },
+        {
+          id: "signals",
+          title: "Set Signals to Track",
+          description: "Define what signals to monitor for each play",
+          estimatedTime: "10 minutes",
+          status: "pending"
+        },
+        {
+          id: "review",
+          title: "Review & Confirm",
+          description: "Review your setup and launch your plays",
+          estimatedTime: "5 minutes",
+          status: "pending"
+        }
+      ];
+
+      // Update step statuses based on progress
+      const progressMap = new Map(progress.results.map((p: any) => [p.step, p]));
+      steps.forEach(step => {
+        const stepProgress = progressMap.get(step.id);
+        if (stepProgress) {
+          step.status = stepProgress.status;
+        }
+      });
+
+      return Response.json({ 
+        steps,
+        progress: progress.results,
+        currentStep: steps.find(s => s.status === "pending")?.id || "review"
+      });
+    }
+
+    if (pathname === "/workshop/progress" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const body = await request.json() as { 
+        step: string; 
+        status: string; 
+        data?: string 
+      };
+
+      // Validate step
+      const validSteps = ["goals", "plays", "owners", "signals", "review"];
+      if (!validSteps.includes(body.step)) {
+        return Response.json({ success: false, message: "Invalid step" }, { status: 400 });
+      }
+
+      // Validate status
+      const validStatuses = ["pending", "in_progress", "completed"];
+      if (!validStatuses.includes(body.status)) {
+        return Response.json({ success: false, message: "Invalid status" }, { status: 400 });
+      }
+
+      // Update or insert progress
+      const now = new Date().toISOString();
+      const startedAt = body.status === "in_progress" ? now : null;
+      const completedAt = body.status === "completed" ? now : null;
+
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO workshop_step_progress 
+        (id, user_id, team_id, step, status, data, started_at, completed_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        crypto.randomUUID(), 
+        userId, 
+        teamId, 
+        body.step, 
+        body.status, 
+        body.data || null,
+        startedAt,
+        completedAt
+      ).run();
+
+      // Log analytics event
+      if (body.status === "completed") {
+        await env.DB.prepare(`
+          INSERT INTO analytics_events (id, user_id, team_id, event_type, event_data)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          teamId,
+          "workshop_step_completed",
+          JSON.stringify({ step: body.step })
+        ).run();
+      }
+
+      return Response.json({ success: true });
     }
 
     return new Response("Not Found", { status: 404 });

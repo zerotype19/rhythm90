@@ -1,32 +1,38 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { fetchNotifications } from "../utils/api";
 
 interface Notification {
   id: string;
+  title?: string;
   message: string;
+  type?: string;
+  priority?: string;
+  action_url?: string;
+  action_text?: string;
+  is_read?: boolean;
   created_at: string;
   user_id?: string;
 }
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [lastCheck, setLastCheck] = useState(Date.now());
+  const [loading, setLoading] = useState(false);
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchNotifications();
+      setNotifications(data.notifications || []);
+    } catch (error) {
+      console.error("Failed to fetch notifications:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/notifications?since=${lastCheck}`);
-        const data = await res.json();
-        if (data.length > 0) {
-          setNotifications((prev) => [...data, ...prev]);
-        }
-        setLastCheck(Date.now());
-      } catch (error) {
-        console.error("Failed to fetch notifications:", error);
-      }
-    }, 5000);
+    refetch();
+  }, [refetch]);
 
-    return () => clearInterval(interval);
-  }, [lastCheck]);
-
-  return { notifications };
+  return { notifications, loading, refetch };
 } 
