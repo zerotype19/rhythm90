@@ -10,6 +10,15 @@ export interface Play {
   created_at: string;
 }
 
+export interface Signal {
+  id: string;
+  play_id: string;
+  observation: string;
+  meaning: string;
+  action: string;
+  created_at: string;
+}
+
 export async function fetchBoard(): Promise<{ results: Play[] }> {
   const res = await fetch(`${import.meta.env.VITE_API_URL}/board`);
   if (!res.ok) throw new Error("Failed to fetch board");
@@ -23,5 +32,21 @@ export async function createPlay(play: Omit<Play, "id" | "created_at">) {
     body: JSON.stringify(play),
   });
   if (!res.ok) throw new Error("Failed to create play");
+  return res.json();
+}
+
+export async function fetchSignals(): Promise<{ results: Signal[] }> {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/signals`);
+  if (!res.ok) throw new Error("Failed to fetch signals");
+  return res.json();
+}
+
+export async function createSignal(signal: Omit<Signal, "id" | "created_at">) {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/signals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(signal),
+  });
+  if (!res.ok) throw new Error("Failed to create signal");
   return res.json();
 } 

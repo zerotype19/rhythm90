@@ -12,7 +12,6 @@ export default {
     }
 
     if (pathname === "/board" && request.method === "GET") {
-      // Default team_id for now
       const plays = await env.DB.prepare(`SELECT * FROM plays WHERE team_id = ?`).bind("team-123").all();
       return Response.json(plays);
     }
@@ -31,6 +30,42 @@ export default {
           body.status || "active"
         )
         .run();
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/signals" && request.method === "GET") {
+      const signals = await env.DB.prepare(`SELECT * FROM signals WHERE play_id = ?`).bind("play-123").all();
+      return Response.json(signals);
+    }
+
+    if (pathname === "/signals" && request.method === "POST") {
+      const body = await request.json();
+      await env.DB.prepare(`INSERT INTO signals (id, play_id, observation, meaning, action) VALUES (?, ?, ?, ?, ?)`)
+        .bind(
+          crypto.randomUUID(),
+          body.play_id,
+          body.observation,
+          body.meaning,
+          body.action
+        )
+        .run();
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/rnr-summary" && request.method === "GET") {
+      const summary = await env.DB.prepare(`
+        SELECT p.name, s.observation, s.meaning, s.action 
+        FROM plays p 
+        JOIN signals s ON p.id = s.play_id 
+        WHERE p.team_id = ?`)
+        .bind("team-123")
+        .all();
+      return Response.json({ summary: summary.results });
+    }
+
+    if (pathname === "/slack-hook" && request.method === "POST") {
+      const payload = await request.json();
+      console.log("Received Slack webhook:", payload);
       return Response.json({ success: true });
     }
 
