@@ -29,7 +29,12 @@ export default function Navbar() {
           <Link to="/developer" className="hover:text-rhythmRed">Developer</Link>
           <Link to="/rnr-summary" className="hover:text-rhythmRed">R&R Summary</Link>
           <Link to="/help" className="hover:text-rhythmRed">Help</Link>
-          <Link to="/changelog" className="hover:text-rhythmRed">Changelog</Link>
+          <Link to="/changelog" className="hover:text-rhythmRed relative">
+            Changelog
+            <Badge className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-1 py-0.5 rounded-full animate-pulse">
+              🆕
+            </Badge>
+          </Link>
           {!loading && isAdmin && (
             <Link to="/admin" className="hover:text-rhythmRed">Admin</Link>
           )}

@@ -783,6 +783,12 @@ export default function Admin() {
 
       {/* Subscription Management Section */}
       <SubscriptionManagementSection />
+
+      {/* Changelog Management Section */}
+      <ChangelogManagementSection />
+
+      {/* Feedback Management Section */}
+      <FeedbackManagementSection />
     </div>
   );
 }

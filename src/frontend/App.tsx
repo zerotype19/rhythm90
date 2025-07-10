@@ -27,6 +27,7 @@ import Developer from './pages/Developer';
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
 import { useOnboarding } from './hooks/useOnboarding';
 import OnboardingTour from './components/OnboardingTour';
+import FeedbackWidget from './components/FeedbackWidget';
 
 // Component to track page views
 function PageTracker() {
@@ -79,6 +80,7 @@ function AppContent() {
         onComplete={completeTour}
         onSkip={skipTour}
       />
+      <FeedbackWidget />
     </div>
   );
 }

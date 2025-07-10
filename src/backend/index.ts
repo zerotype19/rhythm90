@@ -1781,7 +1781,7 @@ export default {
     if (pathname === "/workshop/progress" && request.method === "POST") {
       const userId = getCurrentUserId();
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
-      const teamId = userTeam?.team_id || "team-123";
+      const teamId = (userTeam?.team_id as string) || "team-123";
       
       const body = await request.json() as { 
         step: string; 
@@ -2860,6 +2860,189 @@ export default {
       } catch (error) {
         console.error('Subscription update error:', error);
         return Response.json({ success: false, message: "Failed to update subscription" }, { status: 500 });
+      }
+    }
+
+    // Changelog feed (public)
+    if (pathname === "/changelog/feed" && request.method === "GET") {
+      try {
+        const entries = await env.DB.prepare(`
+          SELECT id, title, description, category, created_at
+          FROM changelog_entries
+          ORDER BY created_at DESC
+          LIMIT 20
+        `).all();
+
+        return Response.json({ entries: entries.results });
+      } catch (error) {
+        console.error('Failed to fetch changelog:', error);
+        return Response.json({ entries: [] });
+      }
+    }
+
+    // Admin: Create changelog entry
+    if (pathname === "/admin/changelog" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as {
+        title: string;
+        description: string;
+        category: 'New Feature' | 'Improvement' | 'Bug Fix' | 'Security';
+      };
+
+      try {
+        await env.DB.prepare(`
+          INSERT INTO changelog_entries (id, title, description, category)
+          VALUES (?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          body.title,
+          body.description,
+          body.category
+        ).run();
+
+        return Response.json({ success: true });
+      } catch (error) {
+        console.error('Failed to create changelog entry:', error);
+        return Response.json({ success: false, message: "Failed to create changelog entry" }, { status: 500 });
+      }
+    }
+
+    // Admin: Update changelog entry
+    if (pathname === "/admin/changelog" && request.method === "PUT") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as {
+        id: string;
+        title: string;
+        description: string;
+        category: 'New Feature' | 'Improvement' | 'Bug Fix' | 'Security';
+      };
+
+      try {
+        await env.DB.prepare(`
+          UPDATE changelog_entries 
+          SET title = ?, description = ?, category = ?
+          WHERE id = ?
+        `).bind(
+          body.title,
+          body.description,
+          body.category,
+          body.id
+        ).run();
+
+        return Response.json({ success: true });
+      } catch (error) {
+        console.error('Failed to update changelog entry:', error);
+        return Response.json({ success: false, message: "Failed to update changelog entry" }, { status: 500 });
+      }
+    }
+
+    // Admin: Delete changelog entry
+    if (pathname === "/admin/changelog" && request.method === "DELETE") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { id: string };
+
+      try {
+        await env.DB.prepare(`
+          DELETE FROM changelog_entries WHERE id = ?
+        `).bind(body.id).run();
+
+        return Response.json({ success: true });
+      } catch (error) {
+        console.error('Failed to delete changelog entry:', error);
+        return Response.json({ success: false, message: "Failed to delete changelog entry" }, { status: 500 });
+      }
+    }
+
+    // Submit feedback
+    if (pathname === "/feedback" && request.method === "POST") {
+      const body = await request.json() as {
+        message: string;
+        category: 'Bug' | 'Feature Request' | 'General Feedback';
+        anonymous?: boolean;
+      };
+
+      try {
+        let userId: string | null = null;
+        let teamId: string | null = null;
+
+        // Try to get user info if not anonymous
+        if (!body.anonymous) {
+          try {
+            userId = getCurrentUserId();
+            const user = await env.DB.prepare(`
+              SELECT team_id FROM team_users WHERE user_id = ? LIMIT 1
+            `).bind(userId).first();
+            teamId = user?.team_id as string | null || null;
+          } catch (error) {
+            // User not authenticated, treat as anonymous
+            console.log('User not authenticated, treating feedback as anonymous');
+          }
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO feedback_entries (id, user_id, team_id, message, category, anonymous)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          teamId,
+          body.message,
+          body.category,
+          body.anonymous || false
+        ).run();
+
+        return Response.json({ success: true });
+      } catch (error) {
+        console.error('Failed to submit feedback:', error);
+        return Response.json({ success: false, message: "Failed to submit feedback" }, { status: 500 });
+      }
+    }
+
+    // Admin: Get feedback entries
+    if (pathname === "/admin/feedback" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const feedback = await env.DB.prepare(`
+          SELECT 
+            fe.id,
+            fe.message,
+            fe.category,
+            fe.anonymous,
+            fe.created_at,
+            u.name as user_name,
+            u.email as user_email,
+            t.name as team_name
+          FROM feedback_entries fe
+          LEFT JOIN users u ON fe.user_id = u.id
+          LEFT JOIN teams t ON fe.team_id = t.id
+          ORDER BY fe.created_at DESC
+          LIMIT 100
+        `).all();
+
+        return Response.json({ feedback: feedback.results });
+      } catch (error) {
+        console.error('Failed to fetch feedback:', error);
+        return Response.json({ feedback: [] });
       }
     }
 
