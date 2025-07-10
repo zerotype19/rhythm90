@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 import { Link } from "react-router-dom";
+import { fetchTeamMembersWithRoles, updateTeamMemberRole, removeTeamMemberFromTeam } from "../utils/api";
 
 interface Team {
   id: string;
@@ -36,6 +37,15 @@ interface AdminData {
   premiumUsers: number;
 }
 
+interface AdminStats {
+  totalUsers: number;
+  premiumUsers: number;
+  activeUsers: number;
+  conversionRate: string;
+  mrr: string;
+  lastUpdated: string;
+}
+
 interface AuditLogEntry {
   id: string;
   action_type: string;
@@ -49,6 +59,7 @@ interface AuditLogEntry {
 
 export default function Admin() {
   const [adminData, setAdminData] = useState<AdminData | null>(null);
+  const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
   const [invites, setInvites] = useState<InvitesData>({ activeInvites: [], expiredInvites: [], totalActive: 0, totalExpired: 0 });
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +84,13 @@ export default function Admin() {
       if (adminRes.ok) {
         const adminData = await adminRes.json();
         setAdminData(adminData);
+      }
+
+      // Load admin stats
+      const statsRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/stats`);
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setAdminStats(statsData);
       }
 
       // Load invites
@@ -295,7 +313,7 @@ export default function Admin() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <Card>
           <CardHeader>
             <CardTitle>Teams</CardTitle>
@@ -309,15 +327,34 @@ export default function Admin() {
             <CardTitle>Total Users</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{adminData?.totalUsers || 0}</p>
+            <p className="text-2xl font-bold">{adminStats?.totalUsers || 0}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Premium Users</CardTitle>
+            <CardTitle>Active Users</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{adminData?.premiumUsers || 0}</p>
+            <p className="text-2xl font-bold">{adminStats?.activeUsers || 0}</p>
+            <p className="text-sm text-gray-500">Last 7 days</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Conversion Rate</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{adminStats?.conversionRate || "0%"}</p>
+            <p className="text-sm text-gray-500">Free to Premium</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>MRR</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{adminStats?.mrr || "$0"}</p>
+            <p className="text-sm text-gray-500">Monthly Recurring</p>
           </CardContent>
         </Card>
       </div>
@@ -558,6 +595,162 @@ export default function Admin() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Team Role Management Section */}
+      <TeamRoleManagement />
     </div>
+  );
+}
+
+// Team Role Management Component
+function TeamRoleManagement() {
+  const [members, setMembers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+  const [removingUser, setRemovingUser] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadTeamMembers();
+  }, []);
+
+  async function loadTeamMembers() {
+    try {
+      const data = await fetchTeamMembersWithRoles();
+      setMembers(data.members || []);
+    } catch (error) {
+      console.error("Failed to load team members:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updateRole(userId: string, newRole: string) {
+    setUpdatingRole(userId);
+    try {
+      const result = await updateTeamMemberRole(userId, newRole);
+      if (result.success) {
+        // Update local state
+        setMembers(prev => 
+          prev.map(member => 
+            member.user_id === userId 
+              ? { ...member, role: newRole }
+              : member
+          )
+        );
+      } else {
+        alert(result.message || "Failed to update role");
+      }
+    } catch (error) {
+      console.error("Failed to update role:", error);
+      alert("Failed to update role. Please try again.");
+    } finally {
+      setUpdatingRole(null);
+    }
+  }
+
+  async function removeUser(userId: string) {
+    if (!confirm("Are you sure you want to remove this user from the team?")) {
+      return;
+    }
+    
+    setRemovingUser(userId);
+    try {
+      const result = await removeTeamMemberFromTeam(userId);
+      if (result.success) {
+        // Remove from local state
+        setMembers(prev => prev.filter(member => member.user_id !== userId));
+      } else {
+        alert(result.message || "Failed to remove user");
+      }
+    } catch (error) {
+      console.error("Failed to remove user:", error);
+      alert("Failed to remove user. Please try again.");
+    } finally {
+      setRemovingUser(null);
+    }
+  }
+
+  function getRoleBadge(role: string) {
+    switch (role) {
+      case "admin":
+        return <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">Admin</Badge>;
+      case "analyst":
+        return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Analyst</Badge>;
+      case "member":
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Member</Badge>;
+      case "viewer":
+        return <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200">Viewer</Badge>;
+      default:
+        return <Badge variant="secondary">{role}</Badge>;
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Team Role Management</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center">Loading team members...</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Team Role Management</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {members.map((member) => (
+            <div key={member.user_id} className="border rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-medium">{member.name}</h4>
+                    {member.is_premium && (
+                      <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 text-xs">
+                        Premium
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{member.email}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    {getRoleBadge(member.role)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={member.role}
+                    onChange={(e) => updateRole(member.user_id, e.target.value)}
+                    disabled={updatingRole === member.user_id}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  >
+                    <option value="member">Member</option>
+                    <option value="analyst">Analyst</option>
+                    <option value="admin">Admin</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => removeUser(member.user_id)}
+                    disabled={removingUser === member.user_id}
+                  >
+                    {removingUser === member.user_id ? "Removing..." : "Remove"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {members.length === 0 && (
+          <p className="text-gray-500 text-center py-4">No team members found.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 } 

@@ -116,4 +116,55 @@ export const fetchDashboardStats = async (): Promise<any> => {
 export const fetchNotifications = async (): Promise<any[]> => {
   const response = await fetch(`${import.meta.env.VITE_API_URL}/notifications`);
   return response.json();
+};
+
+// Team role management
+export const updateTeamMemberRole = async (user_id: string, new_role: string): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/team/update-role`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id, new_role }),
+  });
+  return response.json();
+};
+
+export const removeTeamMemberFromTeam = async (user_id: string): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/team/remove-user`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id }),
+  });
+  return response.json();
+};
+
+export const fetchTeamMembersWithRoles = async (): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/team/members`);
+  return response.json();
+};
+
+// Admin dashboard stats
+export const fetchAdminStats = async (): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/stats`);
+  return response.json();
+};
+
+// Public changelog
+export const fetchChangelog = async (): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/changelog`);
+  return response.json();
+};
+
+// User onboarding
+export const fetchOnboardingStatus = async (): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/onboarding/status`);
+  return response.json();
+};
+
+export const completeOnboardingItem = async (item: string): Promise<any> => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/onboarding/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item }),
+  });
+  return response.json();
 }; 

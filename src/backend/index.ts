@@ -1009,6 +1009,193 @@ export default {
       return Response.json({ auditLog: auditLog.results });
     }
 
+    // Team role management routes
+    if (pathname === "/admin/team/update-role" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { user_id: string; new_role: string };
+      
+      // Validate role
+      const validRoles = ["member", "analyst", "admin", "viewer"];
+      if (!validRoles.includes(body.new_role)) {
+        return Response.json({ success: false, message: "Invalid role" }, { status: 400 });
+      }
+      
+      // Prevent admin from changing their own role
+      if (body.user_id === userId) {
+        return Response.json({ success: false, message: "Cannot change your own role" }, { status: 400 });
+      }
+      
+      // Get current user's role
+      const currentUserRole = await env.DB.prepare(`SELECT role FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const targetUserRole = await env.DB.prepare(`SELECT role FROM team_users WHERE user_id = ?`).bind(body.user_id).first();
+      
+      // Prevent non-admin from changing admin roles
+      if (currentUserRole?.role !== "admin" && targetUserRole?.role === "admin") {
+        return Response.json({ success: false, message: "Only admins can manage admin roles" }, { status: 403 });
+      }
+      
+      // Update role
+      await env.DB.prepare(`UPDATE team_users SET role = ? WHERE user_id = ?`).bind(body.new_role, body.user_id).run();
+      
+      // Log admin action
+      await env.DB.prepare(`INSERT INTO admin_actions (id, admin_user_id, action_type, target_type, target_id, details) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), userId, "role_updated", "user", body.user_id, `Role changed to ${body.new_role}`)
+        .run();
+      
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/admin/team/remove-user" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { user_id: string };
+      
+      // Prevent admin from removing themselves
+      if (body.user_id === userId) {
+        return Response.json({ success: false, message: "Cannot remove yourself from the team" }, { status: 400 });
+      }
+      
+      // Get target user's role
+      const targetUserRole = await env.DB.prepare(`SELECT role FROM team_users WHERE user_id = ?`).bind(body.user_id).first();
+      
+      // Prevent non-admin from removing admin users
+      const currentUserRole = await env.DB.prepare(`SELECT role FROM team_users WHERE user_id = ?`).bind(userId).first();
+      if (currentUserRole?.role !== "admin" && targetUserRole?.role === "admin") {
+        return Response.json({ success: false, message: "Only admins can remove admin users" }, { status: 403 });
+      }
+      
+      // Remove user from team
+      await env.DB.prepare(`DELETE FROM team_users WHERE user_id = ?`).bind(body.user_id).run();
+      
+      // Log admin action
+      await env.DB.prepare(`INSERT INTO admin_actions (id, admin_user_id, action_type, target_type, target_id, details) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), userId, "user_removed", "user", body.user_id, "User removed from team")
+        .run();
+      
+      return Response.json({ success: true });
+    }
+
+    // Admin dashboard stats route
+    if (pathname === "/admin/stats" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      // Get total users
+      const totalUsersResult = await env.DB.prepare(`SELECT COUNT(*) as count FROM users`).first();
+      const totalUsers = totalUsersResult?.count as number || 0;
+      
+      // Get premium users
+      const premiumUsersResult = await env.DB.prepare(`SELECT COUNT(*) as count FROM users WHERE is_premium = 1`).first();
+      const premiumUsers = premiumUsersResult?.count as number || 0;
+      
+      // Get active users (last 7 days) - mock for now
+      const activeUsers = Math.floor(totalUsers * 0.7); // 70% of total users
+      
+      // Calculate conversion rate - mock for now
+      const conversionRate = totalUsers > 0 ? ((premiumUsers / totalUsers) * 100).toFixed(1) : "0.0";
+      
+      // Mock MRR calculation
+      const mrr = premiumUsers * 29; // $29 per premium user
+      
+      return Response.json({
+        totalUsers,
+        premiumUsers,
+        activeUsers,
+        conversionRate: `${conversionRate}%`,
+        mrr: `$${mrr}`,
+        lastUpdated: new Date().toISOString()
+      });
+    }
+
+    // Public changelog route
+    if (pathname === "/changelog" && request.method === "GET") {
+      const changelog = await env.DB.prepare(`
+        SELECT version, title, description, category, release_date, created_at
+        FROM changelog_entries
+        ORDER BY release_date DESC, created_at DESC
+      `).all();
+      
+      return Response.json({ changelog: changelog.results });
+    }
+
+    // User onboarding routes
+    if (pathname === "/onboarding/status" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      
+      const onboardingItems = await env.DB.prepare(`
+        SELECT item, completed_at
+        FROM user_onboarding
+        WHERE user_id = ?
+        ORDER BY completed_at ASC
+      `).bind(userId).all();
+      
+      return Response.json({ items: onboardingItems.results });
+    }
+
+    if (pathname === "/onboarding/complete" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const body = await request.json() as { item: string };
+      
+      // Validate item
+      const validItems = ["create_play", "connect_slack", "explore_help", "invite_team"];
+      if (!validItems.includes(body.item)) {
+        return Response.json({ success: false, message: "Invalid onboarding item" }, { status: 400 });
+      }
+      
+      // Mark item as completed (upsert)
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO user_onboarding (id, user_id, item, completed_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(crypto.randomUUID(), userId, body.item).run();
+      
+      return Response.json({ success: true });
+    }
+
+    // Team members route (for role management UI)
+    if (pathname === "/admin/team/members" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      // Get current user's team
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      // Get team members with their roles
+      const members = await env.DB.prepare(`
+        SELECT 
+          tu.user_id,
+          tu.role,
+          u.name,
+          u.email,
+          u.is_premium
+        FROM team_users tu
+        JOIN users u ON tu.user_id = u.id
+        WHERE tu.team_id = ?
+        ORDER BY u.name ASC
+      `).bind(teamId).all();
+      
+      return Response.json({ members: members.results });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 }; 

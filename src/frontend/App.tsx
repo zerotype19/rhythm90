@@ -19,6 +19,7 @@ import ResetPassword from './pages/ResetPassword';
 import Pricing from './pages/Pricing';
 import Help from './pages/Help';
 import Marketing from "./pages/Marketing";
+import Changelog from './pages/Changelog';
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
 
 // Component to track page views
@@ -61,6 +62,7 @@ export default function App() {
                 <Route path="/pricing" element={<Pricing />} />
                 <Route path="/marketing" element={<Marketing />} />
                 <Route path="/product" element={<Marketing />} />
+                <Route path="/changelog" element={<Changelog />} />
               </Routes>
             </main>
             <Footer />

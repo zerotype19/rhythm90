@@ -25,6 +25,7 @@ export default function Navbar() {
           <Link to="/training" className="hover:text-rhythmRed">Training</Link>
           <Link to="/rnr-summary" className="hover:text-rhythmRed">R&R Summary</Link>
           <Link to="/help" className="hover:text-rhythmRed">Help</Link>
+          <Link to="/changelog" className="hover:text-rhythmRed">Changelog</Link>
           {!loading && isAdmin && (
             <Link to="/admin" className="hover:text-rhythmRed">Admin</Link>
           )}

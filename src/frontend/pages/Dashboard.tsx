@@ -3,6 +3,7 @@ import { fetchDashboardStats } from "../utils/api";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import Loading from "../components/Loading";
+import OnboardingSidebar from "../components/OnboardingSidebar";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ playCount: 0, signalCount: 0 });
@@ -31,6 +32,7 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-6xl mx-auto p-8 space-y-6">
+      <OnboardingSidebar />
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-rhythmBlack dark:text-white">Dashboard</h1>
         {user?.is_premium && (
