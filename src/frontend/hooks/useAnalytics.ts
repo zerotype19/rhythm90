@@ -26,6 +26,9 @@ export const AnalyticsEvents = {
   PASSWORD_RESET_COMPLETED: "password_reset_completed",
   PREMIUM_UPGRADE_CLICKED: "premium_upgrade_clicked",
   PREMIUM_CONTENT_ACCESSED: "premium_content_accessed",
+  ONBOARDING_COMPLETED: "onboarding_completed",
+  ONBOARDING_SKIPPED: "onboarding_skipped",
+  ONBOARDING_RESTARTED: "onboarding_restarted",
 } as const;
 
 // Hook for easy access to tracking function

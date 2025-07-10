@@ -100,6 +100,30 @@ export default function Marketing() {
         </div>
       </section>
 
+      {/* Product Hunt Banner */}
+      <section className="py-8 px-4 bg-orange-50 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-center gap-4">
+            <div className="text-2xl">🚀</div>
+            <div className="text-center">
+              <p className="text-orange-800 dark:text-orange-200 font-medium">
+                We're launching on Product Hunt!
+              </p>
+              <p className="text-orange-700 dark:text-orange-300 text-sm">
+                Support us and get early access to new features
+              </p>
+            </div>
+            <Button 
+              size="sm" 
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+              onClick={() => window.open('https://producthunt.com/posts/rhythm90', '_blank')}
+            >
+              🐱 Vote Now
+            </Button>
+          </div>
+        </div>
+      </section>
+
       {/* Features Section */}
       <section className="py-20 px-4 bg-white dark:bg-gray-900">
         <div className="max-w-6xl mx-auto">

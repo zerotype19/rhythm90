@@ -780,6 +780,9 @@ export default function Admin() {
 
       {/* Notification Sending Section */}
       <NotificationSendingSection />
+
+      {/* Subscription Management Section */}
+      <SubscriptionManagementSection />
     </div>
   );
 }
@@ -1511,6 +1514,247 @@ function NotificationSendingSection() {
             {sending ? "Sending..." : "Send Notification"}
           </Button>
         </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Subscription Management Section Component
+function SubscriptionManagementSection() {
+  const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [showActions, setShowActions] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadSubscriptions();
+  }, []);
+
+  async function loadSubscriptions() {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/subscriptions`);
+      if (res.ok) {
+        const data = await res.json();
+        setSubscriptions(data.subscriptions || []);
+      }
+    } catch (error) {
+      console.error("Failed to load subscriptions:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updateSubscription(teamId: string, action: string, plan?: string) {
+    setUpdating(teamId);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/subscription/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId, action, plan })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.message);
+        await loadSubscriptions();
+      } else {
+        const error = await res.json();
+        alert(error.message || "Failed to update subscription");
+      }
+    } catch (error) {
+      console.error("Failed to update subscription:", error);
+      alert("Failed to update subscription");
+    } finally {
+      setUpdating(null);
+      setShowActions(null);
+    }
+  }
+
+  function getStatusBadge(status: string) {
+    const variants: Record<string, "default" | "secondary" | "destructive"> = {
+      'free': 'secondary',
+      'premium': 'default',
+      'pro': 'default',
+      'cancelled': 'destructive'
+    };
+    return <Badge variant={variants[status] || 'secondary'}>{status}</Badge>;
+  }
+
+  function getActionButtons(team: any) {
+    const actions = [];
+    
+    if (team.billing_status === 'free') {
+      actions.push(
+        <Button
+          key="upgrade-premium"
+          size="sm"
+          onClick={() => updateSubscription(team.team_id, 'upgrade', 'premium')}
+          disabled={updating === team.team_id}
+        >
+          Upgrade to Premium
+        </Button>,
+        <Button
+          key="upgrade-pro"
+          size="sm"
+          variant="outline"
+          onClick={() => updateSubscription(team.team_id, 'upgrade', 'pro')}
+          disabled={updating === team.team_id}
+        >
+          Upgrade to Pro
+        </Button>
+      );
+    } else if (team.billing_status === 'premium') {
+      actions.push(
+        <Button
+          key="upgrade-pro"
+          size="sm"
+          onClick={() => updateSubscription(team.team_id, 'upgrade', 'pro')}
+          disabled={updating === team.team_id}
+        >
+          Upgrade to Pro
+        </Button>,
+        <Button
+          key="downgrade"
+          size="sm"
+          variant="outline"
+          onClick={() => updateSubscription(team.team_id, 'downgrade')}
+          disabled={updating === team.team_id}
+        >
+          Downgrade
+        </Button>,
+        <Button
+          key="cancel"
+          size="sm"
+          variant="destructive"
+          onClick={() => {
+            if (confirm('Are you sure you want to cancel this subscription?')) {
+              updateSubscription(team.team_id, 'cancel');
+            }
+          }}
+          disabled={updating === team.team_id}
+        >
+          Cancel
+        </Button>
+      );
+    } else if (team.billing_status === 'pro') {
+      actions.push(
+        <Button
+          key="downgrade"
+          size="sm"
+          variant="outline"
+          onClick={() => updateSubscription(team.team_id, 'downgrade')}
+          disabled={updating === team.team_id}
+        >
+          Downgrade
+        </Button>,
+        <Button
+          key="cancel"
+          size="sm"
+          variant="destructive"
+          onClick={() => {
+            if (confirm('Are you sure you want to cancel this subscription?')) {
+              updateSubscription(team.team_id, 'cancel');
+            }
+          }}
+          disabled={updating === team.team_id}
+        >
+          Cancel
+        </Button>
+      );
+    } else if (team.billing_status === 'cancelled') {
+      actions.push(
+        <Button
+          key="resume"
+          size="sm"
+          onClick={() => updateSubscription(team.team_id, 'resume')}
+          disabled={updating === team.team_id}
+        >
+          Resume
+        </Button>
+      );
+    }
+
+    return actions;
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            💳 Subscription Management
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <p className="text-gray-600 dark:text-gray-400">Loading subscriptions...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          💳 Subscription Management
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {subscriptions.length === 0 ? (
+            <p className="text-gray-600 dark:text-gray-400 text-center py-8">
+              No teams found
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {subscriptions.map((team) => (
+                <div key={team.team_id} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h4 className="font-medium text-gray-900 dark:text-white">
+                        {team.team_name}
+                      </h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {team.member_count} members • Created {new Date(team.team_created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {getStatusBadge(team.billing_status)}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowActions(showActions === team.team_id ? null : team.team_id)}
+                      >
+                        Actions
+                      </Button>
+                    </div>
+                  </div>
+
+                  {showActions === team.team_id && (
+                    <div className="border-t pt-3">
+                      <div className="flex flex-wrap gap-2">
+                        {getActionButtons(team)}
+                      </div>
+                      {updating === team.team_id && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                          Updating subscription...
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {team.stripe_customer_id && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Stripe Customer: {team.stripe_customer_id}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

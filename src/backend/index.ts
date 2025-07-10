@@ -78,11 +78,24 @@ async function createDemoData(env: Env) {
   }
 }
 
+// CORS helper function
+function addCorsHeaders(response: Response): Response {
+  response.headers.set('Access-Control-Allow-Origin', '*');
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  return response;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
     const appUrl = env.APP_URL || "https://rhythm90.io";
+
+    // Handle CORS preflight requests
+    if (request.method === 'OPTIONS') {
+      return addCorsHeaders(new Response(null, { status: 200 }));
+    }
 
     if (pathname === "/health") {
       return new Response(JSON.stringify({ status: "ok" }), { headers: { "Content-Type": "application/json" } });
@@ -2065,7 +2078,7 @@ export default {
         ORDER BY created_at DESC
       `).bind(apiKeyRecord.team_id).all();
 
-      return Response.json({ plays: plays.results });
+      return addCorsHeaders(Response.json({ plays: plays.results }));
     }
 
     if (pathname.startsWith("/api/signals") && request.method === "GET") {
@@ -2105,7 +2118,7 @@ export default {
         ORDER BY s.created_at DESC
       `).bind(apiKeyRecord.team_id).all();
 
-      return Response.json({ signals: signals.results });
+      return addCorsHeaders(Response.json({ signals: signals.results }));
     }
 
     if (pathname.startsWith("/api/analytics") && request.method === "GET") {
@@ -2151,13 +2164,13 @@ export default {
         SELECT SUM(count) as total FROM ai_usage WHERE team_id = ?
       `).bind(apiKeyRecord.team_id).first();
 
-      return Response.json({
+      return addCorsHeaders(Response.json({
         analytics: {
           totalPlays: playsCount?.count || 0,
           totalSignals: signalsCount?.count || 0,
           totalAIUsage: aiUsageCount?.total || 0
         }
-      });
+      }));
     }
 
     // Workshop notification settings
@@ -2699,6 +2712,155 @@ export default {
         LIMIT 10
       `).all();
       return Response.json({ events: events.results });
+    }
+
+    // Admin: List all team subscriptions
+    if (pathname === "/admin/subscriptions" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const subscriptions = await env.DB.prepare(`
+        SELECT 
+          t.id as team_id,
+          t.name as team_name,
+          t.billing_status,
+          t.stripe_customer_id,
+          t.created_at as team_created_at,
+          COUNT(tu.user_id) as member_count
+        FROM teams t
+        LEFT JOIN team_users tu ON t.id = tu.team_id
+        GROUP BY t.id
+        ORDER BY t.created_at DESC
+      `).all();
+
+      return Response.json({ subscriptions: subscriptions.results });
+    }
+
+    // User onboarding status
+    if (pathname === "/user/onboarding-status" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      
+      try {
+        const user = await env.DB.prepare(`
+          SELECT has_completed_onboarding FROM users WHERE id = ?
+        `).bind(userId).first();
+        
+        return Response.json({ 
+          hasCompletedTour: user?.has_completed_onboarding || false 
+        });
+      } catch (error) {
+        console.error('Failed to get onboarding status:', error);
+        return Response.json({ hasCompletedTour: false });
+      }
+    }
+
+    if (pathname === "/user/complete-onboarding" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      
+      try {
+        await env.DB.prepare(`
+          UPDATE users SET has_completed_onboarding = TRUE WHERE id = ?
+        `).bind(userId).run();
+        
+        return Response.json({ success: true });
+      } catch (error) {
+        console.error('Failed to complete onboarding:', error);
+        return Response.json({ success: false }, { status: 500 });
+      }
+    }
+
+    if (pathname === "/user/skip-onboarding" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      
+      try {
+        await env.DB.prepare(`
+          UPDATE users SET has_completed_onboarding = TRUE WHERE id = ?
+        `).bind(userId).run();
+        
+        return Response.json({ success: true });
+      } catch (error) {
+        console.error('Failed to skip onboarding:', error);
+        return Response.json({ success: false }, { status: 500 });
+      }
+    }
+
+    // Admin: Update subscription
+    if (pathname === "/admin/subscription/update" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as {
+        teamId: string;
+        action: 'upgrade' | 'downgrade' | 'cancel' | 'resume';
+        plan?: string;
+      };
+
+      try {
+        const team = await env.DB.prepare(`
+          SELECT billing_status, stripe_customer_id FROM teams WHERE id = ?
+        `).bind(body.teamId).first();
+
+        if (!team) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        let newStatus = team.billing_status;
+        let message = "";
+
+        switch (body.action) {
+          case 'upgrade':
+            newStatus = body.plan === 'pro' ? 'pro' : 'premium';
+            message = `Upgraded to ${newStatus} plan`;
+            break;
+          case 'downgrade':
+            newStatus = 'free';
+            message = "Downgraded to free plan";
+            break;
+          case 'cancel':
+            newStatus = 'cancelled';
+            message = "Subscription cancelled";
+            break;
+          case 'resume':
+            newStatus = team.billing_status === 'cancelled' ? 'premium' : team.billing_status;
+            message = "Subscription resumed";
+            break;
+        }
+
+        await env.DB.prepare(`
+          UPDATE teams SET billing_status = ? WHERE id = ?
+        `).bind(newStatus, body.teamId).run();
+
+        // Update user premium status
+        await env.DB.prepare(`
+          UPDATE users SET is_premium = ? WHERE id IN (
+            SELECT user_id FROM team_users WHERE team_id = ?
+          )
+        `).bind(newStatus !== 'free' ? 1 : 0, body.teamId).run();
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_actions (id, admin_id, action_type, target_type, target_id, details)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          'subscription_update',
+          'team',
+          body.teamId,
+          JSON.stringify({ action: body.action, oldStatus: team.billing_status, newStatus, message })
+        ).run();
+
+        return Response.json({ success: true, message });
+      } catch (error) {
+        console.error('Subscription update error:', error);
+        return Response.json({ success: false, message: "Failed to update subscription" }, { status: 500 });
+      }
     }
 
     return new Response("Not Found", { status: 404 });

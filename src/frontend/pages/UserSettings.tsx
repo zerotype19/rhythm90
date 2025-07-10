@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
+import { useOnboarding } from "../hooks/useOnboarding";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 
 interface User {
@@ -297,6 +298,25 @@ export default function UserSettings() {
           </CardContent>
         </Card>
       )}
+
+      {/* Onboarding Tour Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Help & Support</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-gray-600 dark:text-gray-400">
+            Need help getting started? Restart the onboarding tour to learn about key features.
+          </p>
+          <Button 
+            onClick={restartTour}
+            variant="outline"
+            className="w-full"
+          >
+            🎯 Restart Onboarding Tour
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 } 

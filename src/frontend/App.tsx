@@ -25,6 +25,8 @@ import Analytics from './pages/Analytics';
 import PublicApi from './pages/PublicApi';
 import Developer from './pages/Developer';
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
+import { useOnboarding } from './hooks/useOnboarding';
+import OnboardingTour from './components/OnboardingTour';
 
 // Component to track page views
 function PageTracker() {
@@ -40,41 +42,54 @@ function PageTracker() {
   return null;
 }
 
+function AppContent() {
+  const { showTour, completeTour, skipTour } = useOnboarding();
+
+  return (
+    <div className="flex flex-col min-h-screen bg-rhythmWhite font-sans">
+      <Navbar />
+      <main className="flex-grow container mx-auto p-4">
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/team" element={<Team />} />
+          <Route path="/training" element={<Training />} />
+          <Route path="/workshop" element={<Workshop />} />
+          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/public-api" element={<PublicApi />} />
+          <Route path="/developer" element={<Developer />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/rnr-summary" element={<RnRSummary />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/admin/invite" element={<Invite />} />
+          <Route path="/accept-invite" element={<AcceptInvite />} />
+          <Route path="/settings" element={<UserSettings />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/request-password-reset" element={<RequestPasswordReset />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/marketing" element={<Marketing />} />
+          <Route path="/product" element={<Marketing />} />
+          <Route path="/changelog" element={<Changelog />} />
+        </Routes>
+      </main>
+      <Footer />
+      <OnboardingTour 
+        isVisible={showTour}
+        onComplete={completeTour}
+        onSkip={skipTour}
+      />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <DemoProvider>
       <AdminProvider>
         <Router>
           <PageTracker />
-          <div className="flex flex-col min-h-screen bg-rhythmWhite font-sans">
-            <Navbar />
-            <main className="flex-grow container mx-auto p-4">
-              <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/team" element={<Team />} />
-                <Route path="/training" element={<Training />} />
-                <Route path="/workshop" element={<Workshop />} />
-                <Route path="/analytics" element={<Analytics />} />
-                <Route path="/public-api" element={<PublicApi />} />
-                <Route path="/developer" element={<Developer />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/rnr-summary" element={<RnRSummary />} />
-                <Route path="/admin" element={<Admin />} />
-                <Route path="/admin/invite" element={<Invite />} />
-                <Route path="/accept-invite" element={<AcceptInvite />} />
-                <Route path="/settings" element={<UserSettings />} />
-                <Route path="/help" element={<Help />} />
-                <Route path="/request-password-reset" element={<RequestPasswordReset />} />
-                <Route path="/reset-password" element={<ResetPassword />} />
-                <Route path="/pricing" element={<Pricing />} />
-                <Route path="/marketing" element={<Marketing />} />
-                <Route path="/product" element={<Marketing />} />
-                <Route path="/changelog" element={<Changelog />} />
-              </Routes>
-            </main>
-            <Footer />
-          </div>
+          <AppContent />
         </Router>
       </AdminProvider>
     </DemoProvider>
