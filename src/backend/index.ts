@@ -3,15 +3,35 @@
 export interface Env {
   DB: D1Database;
   OPENAI_API_KEY: string;
+  APP_URL?: string;
+}
+
+// Helper function to check if user is admin
+async function isAdmin(env: Env, userId: string): Promise<boolean> {
+  const user = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first();
+  return user?.role === 'admin';
+}
+
+// Helper function to get current user ID (for now, hardcoded - will be replaced with auth)
+function getCurrentUserId(): string {
+  return "admin-demo-123"; // Demo admin for now
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
+    const appUrl = env.APP_URL || "https://rhythm90.io";
 
     if (pathname === "/health") {
       return new Response(JSON.stringify({ status: "ok" }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // Admin check route
+    if (pathname === "/admin/check" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      return Response.json({ isAdmin: adminStatus });
     }
 
     if (pathname === "/auth/google" && request.method === "POST") {
@@ -194,22 +214,86 @@ export default {
     }
 
     if (pathname === "/admin/teams" && request.method === "GET") {
-      const teams = await env.DB.prepare(`SELECT * FROM teams`).all();
-      return Response.json(teams.results);
-    }
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
 
-    if (pathname === "/feature-flags" && request.method === "GET") {
-      return Response.json({
-        aiAssistant: true,
-        darkMode: true,
-        notifications: true,
+      const teams = await env.DB.prepare(`SELECT * FROM teams`).all();
+      const teamCount = await env.DB.prepare(`SELECT COUNT(*) as count FROM teams`).first();
+      
+      return Response.json({ 
+        teams: teams.results, 
+        teamCount: teamCount?.count || 0 
       });
     }
 
+    if (pathname === "/feature-flags" && request.method === "GET") {
+      const flags = await env.DB.prepare(`SELECT key, enabled FROM feature_flags`).all();
+      const obj = Object.fromEntries(flags.results.map((f: any) => [f.key, !!f.enabled]));
+      return Response.json(obj);
+    }
+
+    if (pathname === "/feature-flags" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { key: string; enabled: boolean };
+      await env.DB.prepare(`UPDATE feature_flags SET enabled = ? WHERE key = ?`)
+        .bind(body.enabled ? 1 : 0, body.key)
+        .run();
+      return Response.json({ success: true });
+    }
+
     if (pathname === "/invite" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
       const body = await request.json() as { email: string };
-      console.log(`Sending invite to ${body.email}`);
-      return Response.json({ success: true, message: "Invite sent (mock)." });
+      const token = crypto.randomUUID();
+      await env.DB.prepare(`INSERT INTO invites (id, email, token) VALUES (?, ?, ?)`)
+        .bind(crypto.randomUUID(), body.email, token)
+        .run();
+      
+      const inviteLink = `${appUrl}/accept-invite?token=${token}`;
+      console.log(`Invite link: ${inviteLink}`);
+      return Response.json({ success: true, inviteLink });
+    }
+
+    if (pathname === "/accept-invite" && request.method === "GET") {
+      const token = url.searchParams.get("token");
+      if (!token) {
+        return Response.json({ valid: false, message: "No token provided" });
+      }
+
+      const invite = await env.DB.prepare(`SELECT * FROM invites WHERE token = ? AND accepted = 0`).bind(token).first();
+      if (!invite) {
+        return Response.json({ valid: false, message: "Invalid or expired invitation link" });
+      }
+
+      return Response.json({ valid: true, email: invite.email });
+    }
+
+    if (pathname === "/accept-invite" && request.method === "POST") {
+      const body = await request.json() as { token: string };
+      
+      const invite = await env.DB.prepare(`SELECT * FROM invites WHERE token = ? AND accepted = 0`).bind(body.token).first();
+      if (!invite) {
+        return Response.json({ success: false, message: "Invalid or expired invitation link" });
+      }
+
+      await env.DB.prepare(`UPDATE invites SET accepted = 1 WHERE token = ?`).bind(body.token).run();
+      return Response.json({ success: true, message: "Invitation accepted successfully!" });
     }
 
     if (pathname === "/create-sample-notifications" && request.method === "POST") {

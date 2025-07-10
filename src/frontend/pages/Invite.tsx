@@ -8,6 +8,7 @@ export default function Invite() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
 
   function validateEmail(email: string): boolean {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -22,6 +23,7 @@ export default function Invite() {
 
     setLoading(true);
     setMessage(null);
+    setInviteLink(null);
 
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/invite`, {
@@ -31,7 +33,9 @@ export default function Invite() {
       });
 
       if (res.ok) {
+        const data = await res.json();
         setMessage({ type: "success", text: "Invite sent successfully!" });
+        setInviteLink(data.inviteLink);
         setEmail("");
       } else {
         setMessage({ type: "error", text: "Failed to send invite. Please try again." });
@@ -40,6 +44,13 @@ export default function Invite() {
       setMessage({ type: "error", text: "Network error. Please try again." });
     } finally {
       setLoading(false);
+    }
+  }
+
+  function copyInviteLink() {
+    if (inviteLink) {
+      navigator.clipboard.writeText(inviteLink);
+      alert("Invite link copied to clipboard!");
     }
   }
 
@@ -78,6 +89,24 @@ export default function Invite() {
                 : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
             }`}>
               {message.text}
+            </div>
+          )}
+
+          {inviteLink && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+              <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                Invite Link Generated:
+              </p>
+              <div className="flex items-center space-x-2">
+                <Input
+                  value={inviteLink}
+                  readOnly
+                  className="text-sm bg-white dark:bg-gray-800"
+                />
+                <Button size="sm" onClick={copyInviteLink}>
+                  Copy
+                </Button>
+              </div>
             </div>
           )}
 
