@@ -1,20 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Link } from "react-router-dom";
+import { Input } from "../components/ui/input";
+import { Badge } from "../components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
-import { Badge } from "../components/ui/badge";
+import { Link } from "react-router-dom";
 
 interface Team {
   id: string;
   name: string;
-  created_at: string;
-}
-
-interface AdminData {
-  teams: Team[];
-  teamCount: number;
+  billing_status: string;
+  stripe_customer_id?: string;
 }
 
 interface Invite {
@@ -32,44 +30,71 @@ interface InvitesData {
   totalExpired: number;
 }
 
+interface AdminData {
+  teams: Team[];
+  totalUsers: number;
+  premiumUsers: number;
+}
+
+interface AuditLogEntry {
+  id: string;
+  action_type: string;
+  target_type: string;
+  target_id: string;
+  details: string;
+  created_at: string;
+  admin_name: string;
+  admin_email: string;
+}
+
 export default function Admin() {
   const [adminData, setAdminData] = useState<AdminData | null>(null);
   const [invites, setInvites] = useState<InvitesData>({ activeInvites: [], expiredInvites: [], totalActive: 0, totalExpired: 0 });
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingFlags, setUpdatingFlags] = useState<string | null>(null);
   const [cancelingInvite, setCancelingInvite] = useState<string | null>(null);
   const [resendingInvite, setResendingInvite] = useState<string | null>(null);
   const [expiringInvite, setExpiringInvite] = useState<string | null>(null);
+  const [invitingUser, setInvitingUser] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ email: "", role: "member" });
+  const [generatedInviteLink, setGeneratedInviteLink] = useState<string | null>(null);
   const featureFlags = useFeatureFlags();
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [teamsRes, invitesRes] = await Promise.all([
-          fetch(`${import.meta.env.VITE_API_URL}/admin/teams`),
-          fetch(`${import.meta.env.VITE_API_URL}/admin/invites`)
-        ]);
-        
-        if (!teamsRes.ok) {
-          throw new Error("Access denied. Admin privileges required.");
-        }
-        
-        const teamsData = await teamsRes.json();
-        setAdminData(teamsData);
-        
-        if (invitesRes.ok) {
-          const invitesData = await invitesRes.json();
-          setInvites(invitesData);
-        }
-      } catch (error) {
-        setError(error instanceof Error ? error.message : "Failed to load admin data");
-      } finally {
-        setLoading(false);
-      }
-    }
     load();
   }, []);
+
+  async function load() {
+    try {
+      // Load admin data
+      const adminRes = await fetch(`${import.meta.env.VITE_API_URL}/admin`);
+      if (adminRes.ok) {
+        const adminData = await adminRes.json();
+        setAdminData(adminData);
+      }
+
+      // Load invites
+      const invitesRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites`);
+      if (invitesRes.ok) {
+        const invitesData = await invitesRes.json();
+        setInvites(invitesData);
+      }
+
+      // Load audit log
+      const auditRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/audit-log`);
+      if (auditRes.ok) {
+        const auditData = await auditRes.json();
+        setAuditLog(auditData.auditLog || []);
+      }
+    } catch (error) {
+      console.error("Failed to load admin data:", error);
+      setError("Failed to load admin data");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function toggleFeatureFlag(key: string, currentValue: boolean) {
     setUpdatingFlags(key);
@@ -186,6 +211,55 @@ export default function Admin() {
     }
   }
 
+  async function inviteUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inviteForm.email.trim() || !inviteForm.role) return;
+
+    setInvitingUser(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/invite-user`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(inviteForm),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to invite user");
+      }
+
+      const data = await res.json();
+      if (data.success && data.inviteLink) {
+        setGeneratedInviteLink(data.inviteLink);
+        setInviteForm({ email: "", role: "member" });
+        // Reload invites to show the new one
+        const invitesRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/invites`);
+        if (invitesRes.ok) {
+          const invitesData = await invitesRes.json();
+          setInvites(invitesData);
+        }
+        // Reload audit log
+        const auditRes = await fetch(`${import.meta.env.VITE_API_URL}/admin/audit-log`);
+        if (auditRes.ok) {
+          const auditData = await auditRes.json();
+          setAuditLog(auditData.auditLog || []);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to invite user:", error);
+      alert("Failed to invite user. Please try again.");
+    } finally {
+      setInvitingUser(false);
+    }
+  }
+
+  function copyInviteLink() {
+    if (generatedInviteLink) {
+      navigator.clipboard.writeText(generatedInviteLink);
+      alert("Invite link copied to clipboard!");
+      setGeneratedInviteLink(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8">
@@ -221,161 +295,269 @@ export default function Admin() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Teams Section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <Card>
           <CardHeader>
-            <CardTitle>Beta Teams ({adminData?.teamCount || 0})</CardTitle>
+            <CardTitle>Teams</CardTitle>
           </CardHeader>
           <CardContent>
-            {!adminData?.teams || adminData.teams.length === 0 ? (
-              <p className="text-gray-500">No teams found.</p>
-            ) : (
-              <div className="space-y-3">
-                {adminData.teams.map((team) => (
-                  <div key={team.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h3 className="font-semibold">{team.name}</h3>
-                        <p className="text-sm text-gray-500">
-                          Created: {new Date(team.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="text-xs text-gray-400">ID: {team.id}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <p className="text-2xl font-bold">{adminData?.teams.length || 0}</p>
           </CardContent>
         </Card>
-
-        {/* Pending Invites Section */}
         <Card>
           <CardHeader>
-            <CardTitle>Pending Invites ({invites.activeInvites.length})</CardTitle>
+            <CardTitle>Total Users</CardTitle>
           </CardHeader>
           <CardContent>
-            {invites.activeInvites.length === 0 ? (
-              <p className="text-gray-500">No pending invites.</p>
-            ) : (
-              <div className="space-y-3">
-                {invites.activeInvites.map((invite) => (
-                  <div key={invite.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{invite.email}</h3>
-                        <p className="text-sm text-gray-500">
-                          Invited: {new Date(invite.created_at).toLocaleDateString()}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          Expires: {new Date(invite.expires_at).toLocaleDateString()}
-                        </p>
-                        {invite.invited_by_name && (
-                          <p className="text-xs text-gray-400">
-                            By: {invite.invited_by_name}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => cancelInvite(invite.id)}
-                          disabled={cancelingInvite === invite.id}
-                        >
-                          {cancelingInvite === invite.id ? "Canceling..." : "Cancel"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => resendInvite(invite.id)}
-                          disabled={resendingInvite === invite.id}
-                        >
-                          {resendingInvite === invite.id ? "Resending..." : "Resend"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => expireInvite(invite.id)}
-                          disabled={expiringInvite === invite.id}
-                        >
-                          {expiringInvite === invite.id ? "Expiring..." : "Expire"}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <p className="text-2xl font-bold">{adminData?.totalUsers || 0}</p>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Premium Users</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{adminData?.premiumUsers || 0}</p>
+          </CardContent>
+        </Card>
+      </div>
 
-        {/* Expired Invites Section */}
-        {invites.expiredInvites.length > 0 && (
-          <Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {adminData?.teams.map((team) => (
+          <Card key={team.id}>
             <CardHeader>
-              <CardTitle>Expired Invites ({invites.expiredInvites.length})</CardTitle>
+              <CardTitle className="flex items-center justify-between">
+                {team.name}
+                <Badge variant={team.billing_status === "active" ? "default" : "secondary"}>
+                  {team.billing_status}
+                </Badge>
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {invites.expiredInvites.map((invite) => (
-                  <div key={invite.id} className="border rounded-lg p-4 bg-gray-100 dark:bg-gray-900 opacity-75">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-600 dark:text-gray-400">{invite.email}</h3>
-                        <p className="text-sm text-gray-500">
-                          Invited: {new Date(invite.created_at).toLocaleDateString()}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          Expired: {new Date(invite.expires_at).toLocaleDateString()}
-                        </p>
-                        {invite.invited_by_name && (
-                          <p className="text-xs text-gray-400">
-                            By: {invite.invited_by_name}
-                          </p>
-                        )}
-                      </div>
-                      <Badge variant="secondary" className="text-xs">
-                        Expired
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Team ID: {team.id}
+              </p>
+              {team.stripe_customer_id && (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Stripe: {team.stripe_customer_id}
+                </p>
+              )}
             </CardContent>
           </Card>
-        )}
+        ))}
+      </div>
 
-        {/* Feature Flags Section */}
+      {/* Pending Invites Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Pending Invites ({invites.activeInvites.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {invites.activeInvites.length === 0 ? (
+            <p className="text-gray-500">No pending invites.</p>
+          ) : (
+            <div className="space-y-3">
+              {invites.activeInvites.map((invite) => (
+                <div key={invite.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h3 className="font-semibold">{invite.email}</h3>
+                      <p className="text-sm text-gray-500">
+                        Invited: {new Date(invite.created_at).toLocaleDateString()}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        Expires: {new Date(invite.expires_at).toLocaleDateString()}
+                      </p>
+                      {invite.invited_by_name && (
+                        <p className="text-xs text-gray-400">
+                          By: {invite.invited_by_name}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => cancelInvite(invite.id)}
+                        disabled={cancelingInvite === invite.id}
+                      >
+                        {cancelingInvite === invite.id ? "Canceling..." : "Cancel"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => resendInvite(invite.id)}
+                        disabled={resendingInvite === invite.id}
+                      >
+                        {resendingInvite === invite.id ? "Resending..." : "Resend"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => expireInvite(invite.id)}
+                        disabled={expiringInvite === invite.id}
+                      >
+                        {expiringInvite === invite.id ? "Expiring..." : "Expire"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Expired Invites Section */}
+      {invites.expiredInvites.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Feature Flags</CardTitle>
+            <CardTitle>Expired Invites ({invites.expiredInvites.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {Object.entries(featureFlags).map(([key, enabled]) => (
-                <div key={key} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <h4 className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</h4>
-                    <p className="text-sm text-gray-500">
-                      {enabled ? "Enabled" : "Disabled"}
-                    </p>
+            <div className="space-y-3">
+              {invites.expiredInvites.map((invite) => (
+                <div key={invite.id} className="border rounded-lg p-4 bg-gray-100 dark:bg-gray-900 opacity-75">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-600 dark:text-gray-400">{invite.email}</h3>
+                      <p className="text-sm text-gray-500">
+                        Invited: {new Date(invite.created_at).toLocaleDateString()}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        Expired: {new Date(invite.expires_at).toLocaleDateString()}
+                      </p>
+                      {invite.invited_by_name && (
+                        <p className="text-xs text-gray-400">
+                          By: {invite.invited_by_name}
+                        </p>
+                      )}
+                    </div>
+                    <Badge variant="secondary" className="text-xs">
+                      Expired
+                    </Badge>
                   </div>
-                  <Button
-                    variant={enabled ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => toggleFeatureFlag(key, enabled)}
-                    disabled={updatingFlags === key}
-                  >
-                    {updatingFlags === key ? "Updating..." : enabled ? "Disable" : "Enable"}
-                  </Button>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
-      </div>
+      )}
+
+      {/* Feature Flags Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Feature Flags</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {Object.entries(featureFlags).map(([key, enabled]) => (
+              <div key={key} className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <h4 className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</h4>
+                  <p className="text-sm text-gray-500">
+                    {enabled ? "Enabled" : "Disabled"}
+                  </p>
+                </div>
+                <Button
+                  variant={enabled ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => toggleFeatureFlag(key, enabled)}
+                  disabled={updatingFlags === key}
+                >
+                  {updatingFlags === key ? "Updating..." : enabled ? "Disable" : "Enable"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Invite User Form */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Invite New User</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={inviteUser} className="space-y-4">
+            <div>
+              <label htmlFor="inviteEmail" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Email Address
+              </label>
+              <Input
+                id="inviteEmail"
+                type="email"
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                required
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label htmlFor="inviteRole" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Role
+              </label>
+              <select
+                id="inviteRole"
+                value={inviteForm.role}
+                onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                <option value="member">Member</option>
+                <option value="analyst">Analyst</option>
+                <option value="admin">Admin</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </div>
+            <Button type="submit" disabled={invitingUser}>
+              {invitingUser ? "Inviting..." : "Send Invite"}
+            </Button>
+            {generatedInviteLink && (
+              <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900 rounded-md">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  Invite link: <span className="font-mono text-blue-600 dark:text-blue-400">{generatedInviteLink}</span>
+                </p>
+                <Button variant="outline" size="sm" onClick={copyInviteLink} className="mt-2">
+                  Copy Link
+                </Button>
+              </div>
+            )}
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Audit Log Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Audit Log</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Target</TableHead>
+                  <TableHead>Details</TableHead>
+                  <TableHead>Admin</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {auditLog.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell>{new Date(entry.created_at).toLocaleString()}</TableCell>
+                    <TableCell>{entry.action_type}</TableCell>
+                    <TableCell>{entry.target_type}</TableCell>
+                    <TableCell>{entry.details}</TableCell>
+                    <TableCell>{`${entry.admin_name} (${entry.admin_email})`}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 } 

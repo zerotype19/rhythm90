@@ -7,6 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 OPENAI_API_KEY = ""
 STRIPE_SECRET_KEY = ""
 STRIPE_WEBHOOK_SECRET = ""
+CRISP_WEBSITE_ID = "YOUR_CRISP_ID"
 
 [[d1_databases]]
 binding = "DB"

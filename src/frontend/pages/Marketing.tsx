@@ -75,9 +75,7 @@ export default function Marketing() {
             🚀 Now in Beta
           </Badge>
           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6">
-            Track Marketing Signals.
-            <br />
-            <span className="text-blue-600 dark:text-blue-400">Act on Insights.</span>
+            Smarter Marketing Quarters Start Here
           </h1>
           <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-3xl mx-auto">
             Rhythm90 helps marketing teams track, analyze, and act on marketing insights with AI-powered recommendations and collaborative tools.
@@ -238,6 +236,15 @@ export default function Marketing() {
           <p className="text-xl text-blue-100 mb-8">
             Join the waitlist to get early access to Rhythm90 and start tracking your marketing signals like never before.
           </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+            <a 
+              href="mailto:support@rhythm90.io?subject=Rhythm90.io%20Beta%20Access%20Request&body=Hi%20Team%2C%0A%0AI'd%20love%20to%20join%20the%20Rhythm90.io%20beta%20to%20improve%20our%20marketing%20ops.%20Please%20send%20me%20access%20details!%0A%0ABest%2C%0A%5BName%5D"
+              className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-blue-600 bg-white hover:bg-gray-50 transition-colors"
+            >
+              📧 Request Demo
+            </a>
+          </div>
 
           {submitted ? (
             <Card className="max-w-md mx-auto bg-green-50 dark:bg-green-900">

@@ -20,6 +20,7 @@ export default function Navbar() {
             </span>
           )}
           <Link to="/dashboard" className="hover:text-rhythmRed">Dashboard</Link>
+          <Link to="/product" className="hover:text-rhythmRed">Product</Link>
           <Link to="/team" className="hover:text-rhythmRed">Team</Link>
           <Link to="/training" className="hover:text-rhythmRed">Training</Link>
           <Link to="/rnr-summary" className="hover:text-rhythmRed">R&R Summary</Link>

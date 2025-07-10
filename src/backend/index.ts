@@ -945,6 +945,70 @@ export default {
       }
     }
 
+    if (pathname === "/admin/invite-user" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { email: string; role: string };
+      const appUrl = env.APP_URL || "https://rhythm90.io";
+      
+      // Validate role
+      const validRoles = ["member", "analyst", "admin", "viewer"];
+      if (!validRoles.includes(body.role)) {
+        return Response.json({ success: false, message: "Invalid role" }, { status: 400 });
+      }
+      
+      // Generate invite
+      const inviteId = crypto.randomUUID();
+      const token = crypto.randomUUID();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+      
+      // Create invite
+      await env.DB.prepare(`INSERT INTO invites (id, email, token, expires_at, invited_by, role) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(inviteId, body.email, token, expiresAt, userId, body.role)
+        .run();
+      
+      // Log admin action
+      await env.DB.prepare(`INSERT INTO admin_actions (id, admin_user_id, action_type, target_type, target_id, details) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), userId, "invite_user", "invite", inviteId, `Invited ${body.email} as ${body.role}`)
+        .run();
+      
+      const inviteLink = `${appUrl}/accept-invite?token=${token}`;
+      return Response.json({ success: true, inviteLink, email: body.email, role: body.role });
+    }
+
+    if (pathname === "/admin/audit-log" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      // Get latest 100 admin actions with admin names
+      const auditLog = await env.DB.prepare(`
+        SELECT 
+          aa.id,
+          aa.action_type,
+          aa.target_type,
+          aa.target_id,
+          aa.details,
+          aa.created_at,
+          u.name as admin_name,
+          u.email as admin_email
+        FROM admin_actions aa
+        LEFT JOIN users u ON aa.admin_user_id = u.id
+        ORDER BY aa.created_at DESC
+        LIMIT 100
+      `).all();
+      
+      return Response.json({ auditLog: auditLog.results });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 }; 

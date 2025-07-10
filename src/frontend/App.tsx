@@ -60,6 +60,7 @@ export default function App() {
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/pricing" element={<Pricing />} />
                 <Route path="/marketing" element={<Marketing />} />
+                <Route path="/product" element={<Marketing />} />
               </Routes>
             </main>
             <Footer />
