@@ -1,5 +1,8 @@
+/// <reference types="@cloudflare/workers-types" />
+
 export interface Env {
   DB: D1Database;
+  OPENAI_API_KEY: string;
 }
 
 export default {
@@ -30,7 +33,6 @@ export default {
     }
 
     if (pathname === "/board" && request.method === "GET") {
-      // Simulate user session (hardcoded for now)
       const userId = "user-123";
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
       const teamId = userTeam ? userTeam.team_id : "default-team";
@@ -62,7 +64,6 @@ export default {
       const userId = "user-123";
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
       const teamId = userTeam ? userTeam.team_id : "default-team";
-      // For now, just get signals for the first play in the team
       const play = await env.DB.prepare(`SELECT id FROM plays WHERE team_id = ?`).bind(teamId).first();
       const playId = play ? play.id : "play-123";
       const signals = await env.DB.prepare(`SELECT * FROM signals WHERE play_id = ?`).bind(playId).all();
@@ -74,7 +75,6 @@ export default {
       const userId = "user-123";
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
       const teamId = userTeam ? userTeam.team_id : "default-team";
-      // For now, just get the first play for the team
       const play = await env.DB.prepare(`SELECT id FROM plays WHERE team_id = ?`).bind(teamId).first();
       const playId = play ? play.id : "play-123";
       await env.DB.prepare(`INSERT INTO signals (id, play_id, observation, meaning, action) VALUES (?, ?, ?, ?, ?)`)
@@ -105,20 +105,26 @@ export default {
 
     if (pathname === "/ai-signal" && request.method === "POST") {
       const body = await request.json();
-      // Later: Call OpenAI API here
-      return Response.json({ suggestion: `Based on "${body.observation}", consider reviewing targeting.` });
+      console.log("OPENAI_API_KEY:", env.OPENAI_API_KEY);
+      const mockResponse = `Looking at \"${body.observation}\", you might explore deeper segmentation.`;
+      return Response.json({ suggestion: mockResponse });
     }
 
     if (pathname === "/ai-hypothesis" && request.method === "POST") {
       const body = await request.json();
-      // Later: Call OpenAI API here
-      return Response.json({ hypothesis: `We believe "${body.play_name}" will improve engagement by 15%.` });
+      console.log("OPENAI_API_KEY:", env.OPENAI_API_KEY);
+      const mockHypothesis = `We believe \"${body.play_name}\" will increase engagement by 20%.`;
+      return Response.json({ hypothesis: mockHypothesis });
+    }
+
+    if (pathname === "/admin/team" && request.method === "GET") {
+      const members = await env.DB.prepare(`SELECT * FROM team_users WHERE team_id = ?`).bind("team-123").all();
+      return Response.json(members);
     }
 
     if (pathname === "/slack-hook" && request.method === "POST") {
       const payload = await request.json();
       console.log("Received Slack message:", payload.text);
-      // Later: Parse commands like /log-signal or /new-play
       return Response.json({ ok: true });
     }
 
