@@ -240,11 +240,11 @@ export default function Developer() {
                       <h5 className="font-medium text-gray-900 dark:text-white mb-2">JavaScript</h5>
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
                         <code className="text-sm">
-                          const response = await fetch('https://rhythm90.io/api/plays', {{'{'}}<br />
-                          &nbsp;&nbsp;headers: {{'{'}}<br />
+                          const response = await fetch('https://rhythm90.io/api/plays', {'{'}<br />
+                          &nbsp;&nbsp;headers: {'{'}<br />
                           &nbsp;&nbsp;&nbsp;&nbsp;'Authorization': 'Bearer YOUR_API_KEY'<br />
-                          &nbsp;&nbsp;{{'}'}}<br />
-                          {{'}'}});<br />
+                          &nbsp;&nbsp;{'}'}<br />
+                          {'}'});<br />
                           const data = await response.json();
                         </code>
                       </div>
@@ -254,12 +254,13 @@ export default function Developer() {
                       <h5 className="font-medium text-gray-900 dark:text-white mb-2">Python</h5>
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
                         <code className="text-sm">
-                          import requests<br /><br />
-                          response = requests.get(<br />
-                          &nbsp;&nbsp;'https://rhythm90.io/api/plays',<br />
-                          &nbsp;&nbsp;headers={{'{'}}'Authorization': 'Bearer YOUR_API_KEY'{{'}'}}<br />
-                          )<br />
-                          data = response.json()
+                          {`import requests
+
+response = requests.get(
+  'https://rhythm90.io/api/plays',
+  headers={'Authorization': 'Bearer YOUR_API_KEY'}
+)
+data = response.json()`}
                         </code>
                       </div>
                     </div>
@@ -291,12 +292,12 @@ export default function Developer() {
                       <h5 className="font-medium text-gray-900 dark:text-white mb-2">JavaScript</h5>
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
                         <code className="text-sm">
-                          const response = await fetch('https://rhythm90.io/api/signals', {{'{'}}<br />
-                          &nbsp;&nbsp;headers: {{'{'}}<br />
-                          &nbsp;&nbsp;&nbsp;&nbsp;'Authorization': 'Bearer YOUR_API_KEY'<br />
-                          &nbsp;&nbsp;{{'}'}}<br />
-                          {{'}'}});<br />
-                          const data = await response.json();
+                          {`const response = await fetch('https://rhythm90.io/api/signals', {
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY'
+  }
+});
+const data = await response.json();`}
                         </code>
                       </div>
                     </div>
@@ -305,12 +306,13 @@ export default function Developer() {
                       <h5 className="font-medium text-gray-900 dark:text-white mb-2">Python</h5>
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
                         <code className="text-sm">
-                          import requests<br /><br />
-                          response = requests.get(<br />
-                          &nbsp;&nbsp;'https://rhythm90.io/api/signals',<br />
-                          &nbsp;&nbsp;headers={{'{'}}'Authorization': 'Bearer YOUR_API_KEY'{{'}'}}<br />
-                          )<br />
-                          data = response.json()
+                          {`import requests
+
+response = requests.get(
+  'https://rhythm90.io/api/signals',
+  headers={'Authorization': 'Bearer YOUR_API_KEY'}
+)
+data = response.json()`}
                         </code>
                       </div>
                     </div>
@@ -342,12 +344,12 @@ export default function Developer() {
                       <h5 className="font-medium text-gray-900 dark:text-white mb-2">JavaScript</h5>
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
                         <code className="text-sm">
-                          const response = await fetch('https://rhythm90.io/api/analytics', {{'{'}}<br />
-                          &nbsp;&nbsp;headers: {{'{'}}<br />
-                          &nbsp;&nbsp;&nbsp;&nbsp;'Authorization': 'Bearer YOUR_API_KEY'<br />
-                          &nbsp;&nbsp;{{'}'}}<br />
-                          {{'}'}});<br />
-                          const data = await response.json();
+                          {`const response = await fetch('https://rhythm90.io/api/analytics', {
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY'
+  }
+});
+const data = await response.json();`}
                         </code>
                       </div>
                     </div>
@@ -356,12 +358,13 @@ export default function Developer() {
                       <h5 className="font-medium text-gray-900 dark:text-white mb-2">Python</h5>
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
                         <code className="text-sm">
-                          import requests<br /><br />
-                          response = requests.get(<br />
-                          &nbsp;&nbsp;'https://rhythm90.io/api/analytics',<br />
-                          &nbsp;&nbsp;headers={{'{'}}'Authorization': 'Bearer YOUR_API_KEY'{{'}'}}<br />
-                          )<br />
-                          data = response.json()
+                          {`import requests
+
+response = requests.get(
+  'https://rhythm90.io/api/analytics',
+  headers={'Authorization': 'Bearer YOUR_API_KEY'}
+)
+data = response.json()`}
                         </code>
                       </div>
                     </div>
