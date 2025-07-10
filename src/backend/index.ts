@@ -23,6 +23,41 @@ function isDemoMode(env: Env): boolean {
   return env.DEMO_MODE === "true";
 }
 
+// Helper function to create demo data
+async function createDemoData(env: Env) {
+  const teamId = "demo-team-123";
+  
+  // Create demo team
+  await env.DB.prepare(`INSERT OR IGNORE INTO teams (id, name, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)`)
+    .bind(teamId, "Demo Team")
+    .run();
+
+  // Create demo plays
+  const plays = [
+    { id: "demo-play-1", name: "Increase Engagement", target_outcome: "Boost social media engagement by 25%", why_this_play: "Engagement is dropping across all channels", how_to_run: "Focus on interactive content and community building" },
+    { id: "demo-play-2", name: "Boost Conversion", target_outcome: "Improve conversion rate by 15%", why_this_play: "Current conversion funnel has leaks", how_to_run: "Optimize landing pages and reduce friction" }
+  ];
+
+  for (const play of plays) {
+    await env.DB.prepare(`INSERT OR IGNORE INTO plays (id, team_id, name, target_outcome, why_this_play, how_to_run, signals, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(play.id, teamId, play.name, play.target_outcome, play.why_this_play, play.how_to_run, "", "active")
+      .run();
+  }
+
+  // Create demo signals
+  const signals = [
+    { id: "demo-signal-1", play_id: "demo-play-1", observation: "High email open rate", meaning: "Audience is engaged with email content", action: "Double down on email marketing strategy" },
+    { id: "demo-signal-2", play_id: "demo-play-2", observation: "Low ad click-through", meaning: "Ad creative needs improvement", action: "A/B test new ad variations" },
+    { id: "demo-signal-3", play_id: "demo-play-1", observation: "Positive social mentions", meaning: "Brand sentiment is improving", action: "Amplify positive social content" }
+  ];
+
+  for (const signal of signals) {
+    await env.DB.prepare(`INSERT OR IGNORE INTO signals (id, play_id, observation, meaning, action) VALUES (?, ?, ?, ?, ?)`)
+      .bind(signal.id, signal.play_id, signal.observation, signal.meaning, signal.action)
+      .run();
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -55,13 +90,22 @@ export default {
       await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role) VALUES (?, ?, ?, ?, ?)`)
         .bind(demoUser.id, demoUser.email, demoUser.name, demoUser.provider, demoUser.role)
         .run();
+
+      // Create demo data if it doesn't exist
+      await createDemoData(env);
       
-      return Response.json({ success: true, user: demoUser });
+      return Response.json({ success: true, user: demoUser, demo: true });
     }
 
     // Analytics endpoint
     if (pathname === "/analytics" && request.method === "POST") {
-      const body = await request.json();
+      const body = await request.json() as { event: string; data?: Record<string, any> };
+      
+      // Store analytics event in database
+      await env.DB.prepare(`INSERT INTO analytics_events (id, event, data) VALUES (?, ?, ?)`)
+        .bind(crypto.randomUUID(), body.event, JSON.stringify(body.data || {}))
+        .run();
+      
       console.log("Analytics Event:", body);
       return Response.json({ success: true });
     }
@@ -117,6 +161,11 @@ export default {
     }
 
     if (pathname === "/board" && request.method === "POST") {
+      // Skip destructive actions in demo mode
+      if (isDemoMode(env)) {
+        return Response.json({ success: true, demo: true, message: "Action skipped in demo mode" });
+      }
+
       const body = await request.json() as { name: string; target_outcome: string; why_this_play: string; how_to_run: string; signals?: string; status?: string };
       const userId = "user-123";
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
@@ -147,6 +196,11 @@ export default {
     }
 
     if (pathname === "/signals" && request.method === "POST") {
+      // Skip destructive actions in demo mode
+      if (isDemoMode(env)) {
+        return Response.json({ success: true, demo: true, message: "Action skipped in demo mode" });
+      }
+
       const body = await request.json() as { observation: string; meaning: string; action: string };
       const userId = "user-123";
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
@@ -174,6 +228,11 @@ export default {
     }
 
     if (pathname === "/rnr-summary" && request.method === "POST") {
+      // Skip destructive actions in demo mode
+      if (isDemoMode(env)) {
+        return Response.json({ success: true, demo: true, message: "Action skipped in demo mode" });
+      }
+
       const body = await request.json() as { summary: string };
       const userId = "user-123";
       const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
@@ -254,6 +313,11 @@ export default {
     }
 
     if (pathname === "/admin/team/add" && request.method === "POST") {
+      // Skip destructive actions in demo mode
+      if (isDemoMode(env)) {
+        return Response.json({ success: true, demo: true, message: "Action skipped in demo mode" });
+      }
+
       const body = await request.json() as { user_id: string; role: string };
       await env.DB.prepare(`INSERT INTO team_users (team_id, user_id, role) VALUES (?, ?, ?)`)
         .bind("team-123", body.user_id, body.role)
@@ -262,6 +326,11 @@ export default {
     }
 
     if (pathname === "/admin/team/remove" && request.method === "POST") {
+      // Skip destructive actions in demo mode
+      if (isDemoMode(env)) {
+        return Response.json({ success: true, demo: true, message: "Action skipped in demo mode" });
+      }
+
       const body = await request.json() as { user_id: string };
       await env.DB.prepare(`DELETE FROM team_users WHERE team_id = ? AND user_id = ?`)
         .bind("team-123", body.user_id)
@@ -341,14 +410,28 @@ export default {
     }
 
     if (pathname === "/accept-invite" && request.method === "POST") {
-      const body = await request.json() as { token: string };
+      const body = await request.json() as { token: string; name: string };
       
       const invite = await env.DB.prepare(`SELECT * FROM invites WHERE token = ? AND accepted = 0`).bind(body.token).first();
       if (!invite) {
         return Response.json({ success: false, message: "Invalid or expired invitation link" });
       }
 
+      const userId = crypto.randomUUID();
+
+      // Create user account
+      await env.DB.prepare(`INSERT INTO users (id, email, name, provider, role) VALUES (?, ?, ?, ?, ?)`)
+        .bind(userId, invite.email, body.name || "New User", "invite", "member")
+        .run();
+
+      // Add user to team
+      await env.DB.prepare(`INSERT INTO team_users (team_id, user_id, role) VALUES (?, ?, ?)`)
+        .bind("team-123", userId, "member")
+        .run();
+
+      // Mark invite as accepted
       await env.DB.prepare(`UPDATE invites SET accepted = 1 WHERE token = ?`).bind(body.token).run();
+
       return Response.json({ success: true, email: invite.email });
     }
 

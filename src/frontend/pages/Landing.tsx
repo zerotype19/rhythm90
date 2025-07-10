@@ -4,12 +4,14 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Card, CardContent } from "../components/ui/card";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
+import { useDemo } from "../contexts/DemoContext";
 
 export default function Landing() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { isDemoMode, loginAsDemo } = useDemo();
 
   async function joinWaitlist() {
     if (!email.trim()) {
@@ -41,6 +43,15 @@ export default function Landing() {
       setLoading(false);
     }
   }
+
+  const handleDemoLogin = async () => {
+    try {
+      await loginAsDemo();
+      trackEvent(AnalyticsEvents.DEMO_LOGIN);
+    } catch (error) {
+      console.error("Demo login failed:", error);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rhythmWhite to-gray-100 dark:from-gray-900 dark:to-gray-800">
@@ -75,7 +86,7 @@ export default function Landing() {
           </p>
 
           {/* Waitlist Form */}
-          <Card className="max-w-md mx-auto mb-12">
+          <Card className="max-w-md mx-auto mb-8">
             <CardContent className="p-6">
               {!submitted ? (
                 <div className="space-y-4">
@@ -116,13 +127,30 @@ export default function Landing() {
               )}
             </CardContent>
           </Card>
+
+          {/* Demo Login Button */}
+          {isDemoMode && (
+            <div className="text-center mb-12">
+              <Button 
+                onClick={handleDemoLogin}
+                variant="outline" 
+                size="sm"
+                className="text-gray-600 dark:text-gray-400 hover:text-rhythmRed dark:hover:text-rhythmRed"
+              >
+                🚀 Try Demo Mode
+              </Button>
+              <p className="text-xs text-gray-500 mt-2">
+                Explore the app instantly with sample data
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Features Section */}
       <div className="container mx-auto px-6 py-16">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          <Card className="text-center p-6">
+          <Card className="text-center p-6 transition-all hover:shadow-lg hover:scale-105">
             <div className="text-3xl mb-4">🎯</div>
             <h3 className="text-xl font-semibold mb-3 text-rhythmBlack dark:text-white">
               Marketing Plays
@@ -132,7 +160,7 @@ export default function Landing() {
             </p>
           </Card>
 
-          <Card className="text-center p-6">
+          <Card className="text-center p-6 transition-all hover:shadow-lg hover:scale-105">
             <div className="text-3xl mb-4">📊</div>
             <h3 className="text-xl font-semibold mb-3 text-rhythmBlack dark:text-white">
               Signal Tracking
@@ -142,7 +170,7 @@ export default function Landing() {
             </p>
           </Card>
 
-          <Card className="text-center p-6">
+          <Card className="text-center p-6 transition-all hover:shadow-lg hover:scale-105">
             <div className="text-3xl mb-4">🤖</div>
             <h3 className="text-xl font-semibold mb-3 text-rhythmBlack dark:text-white">
               AI Integration
