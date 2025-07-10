@@ -156,7 +156,7 @@ export default {
       // Basic rate limiting (5 requests per hour per email)
       const recentRequests = await env.DB.prepare(`SELECT COUNT(*) as count FROM password_reset_tokens WHERE user_id = (SELECT id FROM users WHERE email = ?) AND created_at > datetime('now', '-1 hour')`).bind(body.email).first();
       
-      if (recentRequests && recentRequests.count >= 5) {
+      if (recentRequests && (recentRequests.count as number) >= 5) {
         return Response.json({ success: false, message: "Too many reset requests. Please try again later." }, { status: 429 });
       }
       
@@ -187,7 +187,7 @@ export default {
       
       const resetToken = await env.DB.prepare(`SELECT user_id, expires_at FROM password_reset_tokens WHERE token = ?`).bind(body.token).first();
       
-      if (!resetToken || new Date(resetToken.expires_at) < new Date()) {
+      if (!resetToken || new Date(resetToken.expires_at as string) < new Date()) {
         return Response.json({ success: false, message: "Invalid or expired reset token" }, { status: 400 });
       }
       
@@ -941,7 +941,7 @@ export default {
         return Response.json({ text: "🤖 Unknown command." });
 
       } catch (error) {
-        return Response.json({ text: `⚠️ ${error.message}` });
+        return Response.json({ text: `⚠️ ${(error as Error).message}` });
       }
     }
 

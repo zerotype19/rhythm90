@@ -3,6 +3,7 @@ main = "src/backend/index.ts"
 compatibility_date = "2025-07-09"
 compatibility_flags = ["nodejs_compat"]
 
+# Environment variables for production deployment
 [vars]
 OPENAI_API_KEY = ""
 STRIPE_SECRET_KEY = ""
