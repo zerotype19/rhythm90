@@ -2004,7 +2004,7 @@ export default {
       return Response.json({ success: true });
     }
 
-    // Public API routes
+    // Public API routes with rate limiting
     if (pathname.startsWith("/api/plays") && request.method === "GET") {
       const apiKey = request.headers.get("Authorization")?.replace("Bearer ", "");
       
@@ -2012,14 +2012,14 @@ export default {
         return Response.json({ error: "API key required" }, { status: 401 });
       }
 
-      // Validate API key
+      // Validate API key and check rate limits
       const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
         .then(hash => Array.from(new Uint8Array(hash))
           .map(b => b.toString(16).padStart(2, '0'))
           .join(''));
 
       const apiKeyRecord = await env.DB.prepare(`
-        SELECT ak.team_id, ak.is_active
+        SELECT ak.team_id, ak.is_active, ak.usage_count, ak.last_used_at
         FROM api_keys ak
         WHERE ak.key_hash = ? AND ak.is_active = TRUE
       `).bind(keyHash).first();
@@ -2028,7 +2028,31 @@ export default {
         return Response.json({ error: "Invalid API key" }, { status: 401 });
       }
 
-      // Update last used
+      // Check rate limits (1000/day for Free, 10000/day for Premium)
+      const team = await env.DB.prepare(`SELECT is_premium FROM teams WHERE id = ?`).bind(apiKeyRecord.team_id).first();
+      const dailyLimit = team?.is_premium ? 10000 : 1000;
+      
+      const today = new Date().toISOString().split('T')[0];
+      const todayUsage = await env.DB.prepare(`
+        SELECT COUNT(*) as count FROM api_usage 
+        WHERE api_key_hash = ? AND date(used_at) = ?
+      `).bind(keyHash, today).first();
+      
+      const usageCount = (todayUsage?.count as number) || 0;
+      if (usageCount >= dailyLimit) {
+        return Response.json({ 
+          error: "Rate limit exceeded", 
+          limit: dailyLimit,
+          reset: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        }, { status: 429 });
+      }
+
+      // Update usage
+      await env.DB.prepare(`
+        INSERT INTO api_usage (id, api_key_hash, endpoint, used_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(crypto.randomUUID(), keyHash, '/api/plays').run();
+
       await env.DB.prepare(`
         UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
       `).bind(keyHash).run();
@@ -2183,6 +2207,500 @@ export default {
       return Response.json({ success: true });
     }
 
+    // Slack 2-way sync routes
+    if (pathname === "/slack/webhook" && request.method === "POST") {
+      const body = await request.json() as any;
+      
+      // Handle Slack Events API challenge
+      if (body.type === "url_verification") {
+        return Response.json({ challenge: body.challenge });
+      }
+
+      // Handle Slack events
+      if (body.type === "event_callback") {
+        const event = body.event;
+        const teamId = body.team_id;
+        
+        // Store event for processing
+        await env.DB.prepare(`
+          INSERT INTO slack_events (id, team_id, event_type, event_data)
+          VALUES (?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          teamId,
+          event.type,
+          JSON.stringify(event)
+        ).run();
+
+        // Process keyword detection
+        if (event.type === "message" && event.text) {
+          const keywords = ["#signal", "#play", "#ai", "#analytics"];
+          const text = event.text.toLowerCase();
+          
+          for (const keyword of keywords) {
+            if (text.includes(keyword)) {
+              // Parse command
+              const command = parseSlackCommand(event.text, keyword);
+              if (command) {
+                await processSlackCommand(env, teamId, command, event.user);
+              }
+            }
+          }
+        }
+
+        return Response.json({ success: true });
+      }
+
+      return Response.json({ success: true });
+    }
+
+    // Slack sync settings
+    if (pathname === "/slack/sync-settings" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      const settings = await env.DB.prepare(`
+        SELECT two_way_sync_enabled, last_sync_at, last_event_received, sync_status, keywords_enabled
+        FROM slack_settings WHERE team_id = ?
+      `).bind(teamId).first();
+
+      return Response.json({ settings: settings || {} });
+    }
+
+    if (pathname === "/slack/sync-settings" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const body = await request.json() as {
+        two_way_sync_enabled: boolean;
+        keywords_enabled: string;
+      };
+
+      await env.DB.prepare(`
+        UPDATE slack_settings 
+        SET two_way_sync_enabled = ?, keywords_enabled = ?, sync_status = ?, last_sync_at = CURRENT_TIMESTAMP
+        WHERE team_id = ?
+      `).bind(
+        body.two_way_sync_enabled,
+        body.keywords_enabled,
+        body.two_way_sync_enabled ? 'connected' : 'disconnected',
+        teamId
+      ).run();
+
+      return Response.json({ success: true });
+    }
+
+    // Slack events log
+    if (pathname === "/slack/events" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      const events = await env.DB.prepare(`
+        SELECT id, event_type, event_data, processed, created_at
+        FROM slack_events 
+        WHERE team_id = ?
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).bind(teamId).all();
+
+      return Response.json({ events: events.results });
+    }
+
+    // Enhanced analytics routes
+    if (pathname === "/analytics/user-activity" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const { searchParams } = new URL(request.url);
+      const targetUserId = searchParams.get("userId") || userId;
+      const days = parseInt(searchParams.get("days") || "30");
+
+      // Get user activity for specified period
+      const userActivity = await env.DB.prepare(`
+        SELECT date, plays_created, signals_logged, ai_interactions, workshop_steps_completed, api_calls
+        FROM user_activity_summary 
+        WHERE user_id = ? AND team_id = ? AND date >= date('now', '-${days} days')
+        ORDER BY date ASC
+      `).bind(targetUserId, teamId).all();
+
+      // Get team average for comparison
+      const teamAverage = await env.DB.prepare(`
+        SELECT 
+          AVG(plays_created) as avg_plays,
+          AVG(signals_logged) as avg_signals,
+          AVG(ai_interactions) as avg_ai,
+          AVG(workshop_steps_completed) as avg_workshop,
+          AVG(api_calls) as avg_api
+        FROM user_activity_summary 
+        WHERE team_id = ? AND date >= date('now', '-${days} days')
+      `).bind(teamId).first();
+
+      return Response.json({ 
+        userActivity: userActivity.results,
+        teamAverage: teamAverage
+      });
+    }
+
+    if (pathname === "/analytics/play-performance" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const { searchParams } = new URL(request.url);
+      const days = parseInt(searchParams.get("days") || "30");
+
+      // Get play performance data
+      const playPerformance = await env.DB.prepare(`
+        SELECT 
+          p.id, p.name, p.target_outcome,
+          pp.outcome_achieved, pp.outcome_notes, pp.marked_at,
+          u.name as marked_by_name
+        FROM plays p
+        LEFT JOIN play_performance pp ON p.id = pp.play_id
+        LEFT JOIN users u ON pp.marked_by_user_id = u.id
+        WHERE p.team_id = ? AND p.created_at >= date('now', '-${days} days')
+        ORDER BY p.created_at DESC
+      `).bind(teamId).all();
+
+      return Response.json({ playPerformance: playPerformance.results });
+    }
+
+    if (pathname === "/analytics/premium-usage" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const { searchParams } = new URL(request.url);
+      const days = parseInt(searchParams.get("days") || "30");
+
+      // Get premium feature usage
+      const premiumUsage = await env.DB.prepare(`
+        SELECT date, ai_usage_count, workshop_completions, api_calls_count, premium_features_used
+        FROM premium_feature_usage 
+        WHERE team_id = ? AND date >= date('now', '-${days} days')
+        ORDER BY date ASC
+      `).bind(teamId).all();
+
+      return Response.json({ premiumUsage: premiumUsage.results });
+    }
+
+    // Play outcome marking
+    if (pathname === "/plays/outcome" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const body = await request.json() as {
+        playId: string;
+        outcomeAchieved: boolean;
+        outcomeNotes?: string;
+      };
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO play_performance 
+        (id, play_id, team_id, outcome_achieved, outcome_notes, marked_by_user_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(
+        crypto.randomUUID(),
+        body.playId,
+        teamId,
+        body.outcomeAchieved,
+        body.outcomeNotes || null,
+        userId
+      ).run();
+
+      return Response.json({ success: true });
+    }
+
+    // Advanced API permissions routes
+    if (pathname === "/api-keys/scopes" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+
+      const apiKeys = await env.DB.prepare(`
+        SELECT id, name, scopes, is_active, created_at, last_used_at
+        FROM api_keys 
+        WHERE team_id = ?
+        ORDER BY created_at DESC
+      `).bind(teamId).all();
+
+      return Response.json({ apiKeys: apiKeys.results });
+    }
+
+    if (pathname === "/api-keys/scopes" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+      const teamId = userTeam?.team_id || "team-123";
+      
+      const body = await request.json() as {
+        keyId: string;
+        scopes: string;
+      };
+
+      await env.DB.prepare(`
+        UPDATE api_keys SET scopes = ? WHERE id = ? AND team_id = ?
+      `).bind(body.scopes, body.keyId, teamId).run();
+
+      return Response.json({ success: true });
+    }
+
+    if (pathname === "/api-keys/templates" && request.method === "GET") {
+      return Response.json({
+        templates: {
+          "read-only": "read:plays,read:signals,read:analytics",
+          "full-access": "read:plays,write:plays,read:signals,write:signals,read:analytics,write:analytics",
+          "signals-only": "read:signals,write:signals",
+          "analytics-only": "read:analytics"
+        }
+      });
+    }
+
+    // Admin export routes
+    if (pathname === "/admin/export-audit-log" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const { searchParams } = new URL(request.url);
+      const format = searchParams.get("format") || "csv";
+      const startDate = searchParams.get("startDate") || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const endDate = searchParams.get("endDate") || new Date().toISOString().split('T')[0];
+
+      // Get audit log data
+      const auditLog = await env.DB.prepare(`
+        SELECT 
+          al.id,
+          al.action_type,
+          al.action_details,
+          al.created_at,
+          u.name as admin_name,
+          u.email as admin_email
+        FROM admin_audit_log al
+        LEFT JOIN users u ON al.admin_user_id = u.id
+        WHERE al.created_at >= ? AND al.created_at <= ?
+        ORDER BY al.created_at DESC
+      `).bind(startDate, endDate).all();
+
+      const data = auditLog.results as any[];
+      
+      if (format === "json") {
+        const filename = `audit-log-${new Date().toISOString().split('T')[0]}.json`;
+        return new Response(JSON.stringify({ auditLog: data }, null, 2), {
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Disposition": `attachment; filename="${filename}"`
+          }
+        });
+      } else {
+        // CSV format
+        const csvHeaders = "ID,Action Type,Action Details,Admin Name,Admin Email,Created At\n";
+        const csvRows = data.map(row => 
+          `"${row.id}","${row.action_type}","${row.action_details?.replace(/"/g, '""') || ''}","${row.admin_name || ''}","${row.admin_email || ''}","${row.created_at}"`
+        ).join('\n');
+        
+        const csvContent = csvHeaders + csvRows;
+        const filename = `audit-log-${new Date().toISOString().split('T')[0]}.csv`;
+        
+        return new Response(csvContent, {
+          headers: {
+            "Content-Type": "text/csv",
+            "Content-Disposition": `attachment; filename="${filename}"`
+          }
+        });
+      }
+    }
+
+    if (pathname === "/admin/export-analytics" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const { searchParams } = new URL(request.url);
+      const format = searchParams.get("format") || "csv";
+      const startDate = searchParams.get("startDate") || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const endDate = searchParams.get("endDate") || new Date().toISOString().split('T')[0];
+
+      // Get analytics data
+      const analytics = await env.DB.prepare(`
+        SELECT 
+          t.name as team_name,
+          t.created_at as team_created,
+          COUNT(DISTINCT p.id) as total_plays,
+          COUNT(DISTINCT s.id) as total_signals,
+          COUNT(DISTINCT u.id) as total_users,
+          SUM(ai.count) as total_ai_usage,
+          t.is_premium
+        FROM teams t
+        LEFT JOIN plays p ON t.id = p.team_id
+        LEFT JOIN signals s ON p.id = s.play_id
+        LEFT JOIN team_users tu ON t.id = tu.team_id
+        LEFT JOIN users u ON tu.user_id = u.id
+        LEFT JOIN ai_usage ai ON t.id = ai.team_id
+        WHERE t.created_at >= ? AND t.created_at <= ?
+        GROUP BY t.id, t.name, t.created_at, t.is_premium
+        ORDER BY t.created_at DESC
+      `).bind(startDate, endDate).all();
+
+      const data = analytics.results as any[];
+      
+      if (format === "json") {
+        const filename = `analytics-export-${new Date().toISOString().split('T')[0]}.json`;
+        return new Response(JSON.stringify({ analytics: data }, null, 2), {
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Disposition": `attachment; filename="${filename}"`
+          }
+        });
+      } else {
+        // CSV format
+        const csvHeaders = "Team Name,Team Created,Total Plays,Total Signals,Total Users,Total AI Usage,Premium\n";
+        const csvRows = data.map(row => 
+          `"${row.team_name || ''}","${row.team_created}","${row.total_plays || 0}","${row.total_signals || 0}","${row.total_users || 0}","${row.total_ai_usage || 0}","${row.is_premium ? 'Yes' : 'No'}"`
+        ).join('\n');
+        
+        const csvContent = csvHeaders + csvRows;
+        const filename = `analytics-export-${new Date().toISOString().split('T')[0]}.csv`;
+        
+        return new Response(csvContent, {
+          headers: {
+            "Content-Type": "text/csv",
+            "Content-Disposition": `attachment; filename="${filename}"`
+          }
+        });
+      }
+    }
+
+    // Stripe webhook handler
+    if (pathname === "/stripe/webhook" && request.method === "POST") {
+      const sig = request.headers.get("stripe-signature");
+      const secret = env.STRIPE_WEBHOOK_SECRET;
+      const rawBody = await request.text();
+      let event: any = null;
+      let verified = false;
+
+      // Signature verification (manual, since no Stripe SDK)
+      try {
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+          "raw",
+          encoder.encode(secret),
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["verify"]
+        );
+        // Stripe signature format: t=timestamp,v1=signature
+        if (!sig) throw new Error("Missing signature");
+        const [tPart, v1Part] = sig.split(",");
+        const timestamp = tPart.split("=")[1];
+        const signature = v1Part.split("=")[1];
+        const signedPayload = `${timestamp}.${rawBody}`;
+        const signatureBytes = hexToBytes(signature);
+        const valid = await crypto.subtle.verify(
+          "HMAC",
+          key,
+          encoder.encode(signedPayload),
+          signatureBytes
+        );
+        if (!valid) throw new Error("Invalid signature");
+        verified = true;
+      } catch (err) {
+        return new Response("Invalid signature", { status: 400 });
+      }
+
+      try {
+        event = JSON.parse(rawBody);
+      } catch (err) {
+        return new Response("Invalid payload", { status: 400 });
+      }
+
+      // Log event
+      await env.DB.prepare(`
+        INSERT INTO stripe_events (id, event_type, event_data, created_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        crypto.randomUUID(),
+        event.type,
+        JSON.stringify(event)
+      ).run();
+
+      // Handle event types
+      if (event.type === "invoice.payment_succeeded") {
+        const customerId = event.data.object.customer;
+        // Find team by Stripe customer ID
+        const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
+        if (team) {
+          await env.DB.prepare(`UPDATE teams SET is_premium = 1, premium_grace_until = NULL WHERE id = ?`).bind(team.id).run();
+        }
+      } else if (event.type === "invoice.payment_failed") {
+        const customerId = event.data.object.customer;
+        const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
+        if (team) {
+          await env.DB.prepare(`UPDATE teams SET is_premium = 0, at_risk = 1 WHERE id = ?`).bind(team.id).run();
+        }
+      } else if (event.type === "customer.subscription.deleted") {
+        const customerId = event.data.object.customer;
+        const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
+        if (team) {
+          // Set 7-day grace period
+          const graceUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          await env.DB.prepare(`UPDATE teams SET is_premium = 0, premium_grace_until = ?, at_risk = 1 WHERE id = ?`).bind(graceUntil, team.id).run();
+        }
+      }
+
+      return Response.json({ received: true });
+    }
+
+    // Admin: last 10 Stripe events
+    if (pathname === "/admin/stripe-events" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const events = await env.DB.prepare(`
+        SELECT id, event_type, event_data, created_at
+        FROM stripe_events
+        ORDER BY created_at DESC
+        LIMIT 10
+      `).all();
+      return Response.json({ events: events.results });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 };
@@ -2192,7 +2710,7 @@ async function sendSlackNotification(env: Env, teamId: string, message: string) 
   try {
     const settings = await env.DB.prepare(`SELECT webhook_url FROM slack_settings WHERE team_id = ? AND is_active = 1`).bind(teamId).first();
     
-    if (settings?.webhook_url) {
+    if (settings?.webhook_url && typeof settings.webhook_url === 'string') {
       await fetch(settings.webhook_url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2203,4 +2721,122 @@ async function sendSlackNotification(env: Env, teamId: string, message: string) 
     console.error("Failed to send Slack notification:", error);
     // Don't throw - webhook failures shouldn't break the main flow
   }
+}
+
+// Helper function to parse Slack commands
+function parseSlackCommand(text: string, keyword: string): any {
+  try {
+    const parts = text.split(' ');
+    const keywordIndex = parts.findIndex(part => part.toLowerCase() === keyword);
+    
+    if (keywordIndex === -1) return null;
+    
+    const command = parts[keywordIndex + 1];
+    const args = parts.slice(keywordIndex + 2);
+    
+    // Handle quoted arguments
+    const parsedArgs: string[] = [];
+    let currentArg = '';
+    let inQuotes = false;
+    
+    for (const arg of args) {
+      if (arg.startsWith('"') && !inQuotes) {
+        inQuotes = true;
+        currentArg = arg.slice(1);
+      } else if (arg.endsWith('"') && inQuotes) {
+        inQuotes = false;
+        currentArg += ' ' + arg.slice(0, -1);
+        parsedArgs.push(currentArg.trim());
+        currentArg = '';
+      } else if (inQuotes) {
+        currentArg += ' ' + arg;
+      } else {
+        parsedArgs.push(arg);
+      }
+    }
+    
+    // Handle unclosed quotes
+    if (inQuotes && currentArg) {
+      parsedArgs.push(currentArg.trim());
+    }
+    
+    return {
+      keyword,
+      command,
+      args: parsedArgs
+    };
+  } catch (error) {
+    console.error("Error parsing Slack command:", error);
+    return null;
+  }
+}
+
+// Helper function to process Slack commands
+async function processSlackCommand(env: Env, teamId: string, parsedCommand: any, userId: string) {
+  try {
+    const { keyword, command, args } = parsedCommand;
+    
+    if (keyword === "#signal") {
+      if (command === "play-123" && args.length > 0) {
+        const observation = args[0];
+        
+        // Create signal
+        await env.DB.prepare(`
+          INSERT INTO signals (id, play_id, observation, meaning, action)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          "play-123",
+          observation,
+          "Signal detected from Slack",
+          "Review and act on observation"
+        ).run();
+        
+        // Send confirmation
+        await sendSlackNotification(env, teamId, `✅ Signal logged: "${observation}" for play-123`);
+      } else {
+        await sendSlackNotification(env, teamId, `❌ Invalid signal command. Use: #signal play-123 "observation text"`);
+      }
+    } else if (keyword === "#play") {
+      if (args.length >= 2) {
+        const playName = args[0];
+        const targetOutcome = args[1];
+        
+        // Create play
+        await env.DB.prepare(`
+          INSERT INTO plays (id, team_id, name, target_outcome, why_this_play, how_to_run, signals, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          teamId,
+          playName,
+          targetOutcome,
+          "Created via Slack command",
+          "Define execution plan",
+          "",
+          "active"
+        ).run();
+        
+        // Send confirmation
+        await sendSlackNotification(env, teamId, `✅ Play created: "${playName}" with target: "${targetOutcome}"`);
+      } else {
+        await sendSlackNotification(env, teamId, `❌ Invalid play command. Use: #play "Play Name" "Target Outcome"`);
+      }
+    } else if (keyword === "#ai" || keyword === "#analytics") {
+      await sendSlackNotification(env, teamId, `🔧 ${keyword} integration coming soon! Visit the dashboard for now.`);
+    }
+  } catch (error) {
+    console.error("Error processing Slack command:", error);
+    await sendSlackNotification(env, teamId, `❌ Error processing command. Please try again.`);
+  }
+}
+
+// Helper for hex to bytes
+function hexToBytes(hex: string): Uint8Array {
+  if (!hex) return new Uint8Array();
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
 } 

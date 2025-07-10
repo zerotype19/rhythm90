@@ -338,4 +338,47 @@ export async function updateWorkshopNotificationSettings(settings: {
     body: JSON.stringify(settings),
   });
   return response.json();
+}
+
+// Admin export functions
+export async function exportAuditLog(format: 'csv' | 'json', startDate?: string, endDate?: string) {
+  const params = new URLSearchParams();
+  params.append('format', format);
+  if (startDate) params.append('startDate', startDate);
+  if (endDate) params.append('endDate', endDate);
+  
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/export-audit-log?${params}`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to export audit log');
+  }
+  
+  const blob = await response.blob();
+  const filename = response.headers.get('Content-Disposition')?.split('filename=')[1]?.replace(/"/g, '') || `audit-log-${new Date().toISOString().split('T')[0]}.${format}`;
+  
+  return { blob, filename };
+}
+
+export async function exportAnalytics(format: 'csv' | 'json', startDate?: string, endDate?: string) {
+  const params = new URLSearchParams();
+  params.append('format', format);
+  if (startDate) params.append('startDate', startDate);
+  if (endDate) params.append('endDate', endDate);
+  
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/export-analytics?${params}`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to export analytics');
+  }
+  
+  const blob = await response.blob();
+  const filename = response.headers.get('Content-Disposition')?.split('filename=')[1]?.replace(/"/g, '') || `analytics-export-${new Date().toISOString().split('T')[0]}.${format}`;
+  
+  return { blob, filename };
+} 
+
+// Stripe events for admin
+export async function fetchStripeEvents(): Promise<any> {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/stripe-events`);
+  return response.json();
 } 

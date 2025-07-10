@@ -10,7 +10,7 @@ import { Link } from "react-router-dom";
 import { fetchTeamMembersWithRoles, updateTeamMemberRole, removeTeamMemberFromTeam } from "../utils/api";
 import { fetchSlackSettings } from "../utils/api";
 import { sendNotification } from "../utils/api";
-import { fetchApiKeys, createApiKey, revokeApiKey, fetchWorkshopNotificationSettings, updateWorkshopNotificationSettings } from "../utils/api";
+import { fetchApiKeys, createApiKey, revokeApiKey, fetchWorkshopNotificationSettings, updateWorkshopNotificationSettings, exportAuditLog, exportAnalytics } from "../utils/api";
 
 interface Team {
   id: string;
@@ -100,6 +100,12 @@ export default function Admin() {
     notify_workshop_completed: true
   });
   const [updatingWorkshopSettings, setUpdatingWorkshopSettings] = useState(false);
+  const [exportingAuditLog, setExportingAuditLog] = useState(false);
+  const [exportingAnalytics, setExportingAnalytics] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
+  const [exportDateRange, setExportDateRange] = useState('30d');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const featureFlags = useFeatureFlags();
 
   useEffect(() => {
@@ -369,6 +375,76 @@ export default function Admin() {
       alert("Failed to update workshop settings. Please try again.");
     } finally {
       setUpdatingWorkshopSettings(false);
+    }
+  }
+
+  async function handleExportAuditLog() {
+    setExportingAuditLog(true);
+    try {
+      let startDate, endDate;
+      
+      if (exportDateRange === 'custom') {
+        startDate = customStartDate;
+        endDate = customEndDate;
+      } else {
+        const days = exportDateRange === '7d' ? 7 : 30;
+        endDate = new Date().toISOString().split('T')[0];
+        startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      }
+
+      const { blob, filename } = await exportAuditLog(exportFormat, startDate, endDate);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      alert(`Audit log exported successfully as ${filename}`);
+    } catch (error) {
+      console.error("Failed to export audit log:", error);
+      alert("Failed to export audit log. Please try again.");
+    } finally {
+      setExportingAuditLog(false);
+    }
+  }
+
+  async function handleExportAnalytics() {
+    setExportingAnalytics(true);
+    try {
+      let startDate, endDate;
+      
+      if (exportDateRange === 'custom') {
+        startDate = customStartDate;
+        endDate = customEndDate;
+      } else {
+        const days = exportDateRange === '7d' ? 7 : 30;
+        endDate = new Date().toISOString().split('T')[0];
+        startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      }
+
+      const { blob, filename } = await exportAnalytics(exportFormat, startDate, endDate);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      alert(`Analytics exported successfully as ${filename}`);
+    } catch (error) {
+      console.error("Failed to export analytics:", error);
+      alert("Failed to export analytics. Please try again.");
+    } finally {
+      setExportingAnalytics(false);
     }
   }
 

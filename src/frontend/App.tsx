@@ -23,6 +23,7 @@ import Changelog from './pages/Changelog';
 import Workshop from './pages/Workshop';
 import Analytics from './pages/Analytics';
 import PublicApi from './pages/PublicApi';
+import Developer from './pages/Developer';
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
 
 // Component to track page views
@@ -56,6 +57,7 @@ export default function App() {
                 <Route path="/workshop" element={<Workshop />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/public-api" element={<PublicApi />} />
+                <Route path="/developer" element={<Developer />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/rnr-summary" element={<RnRSummary />} />
                 <Route path="/admin" element={<Admin />} />
