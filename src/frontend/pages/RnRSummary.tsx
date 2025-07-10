@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import Loading from "../components/Loading";
+import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 
 export default function RnRSummary() {
   const [summary, setSummary] = useState("");
@@ -26,6 +27,13 @@ export default function RnRSummary() {
   async function handleSaveSummary() {
     try {
       await saveRnRSummary(summary);
+      
+      // Track the R&R save event
+      trackEvent(AnalyticsEvents.RNR_SAVED, { 
+        summaryLength: summary.length,
+        hasContent: summary.trim().length > 0
+      });
+      
       alert("R&R Summary saved!");
     } catch (error) {
       console.error('Failed to save R&R summary:', error);

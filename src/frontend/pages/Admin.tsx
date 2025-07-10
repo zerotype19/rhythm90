@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Link } from "react-router-dom";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
+import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 
 interface Team {
   id: string;
@@ -52,6 +53,12 @@ export default function Admin() {
       if (!res.ok) {
         throw new Error("Failed to update feature flag");
       }
+
+      // Track the feature flag toggle event
+      trackEvent(AnalyticsEvents.FEATURE_TOGGLED, { 
+        feature: key, 
+        newValue: !currentValue 
+      });
 
       // Refresh the page to show updated flags
       window.location.reload();

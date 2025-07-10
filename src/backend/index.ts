@@ -4,6 +4,7 @@ export interface Env {
   DB: D1Database;
   OPENAI_API_KEY: string;
   APP_URL?: string;
+  DEMO_MODE?: string;
 }
 
 // Helper function to check if user is admin
@@ -17,6 +18,11 @@ function getCurrentUserId(): string {
   return "admin-demo-123"; // Demo admin for now
 }
 
+// Helper function to check if demo mode is enabled
+function isDemoMode(env: Env): boolean {
+  return env.DEMO_MODE === "true";
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -25,6 +31,56 @@ export default {
 
     if (pathname === "/health") {
       return new Response(JSON.stringify({ status: "ok" }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // Demo mode check route
+    if (pathname === "/demo/check" && request.method === "GET") {
+      return Response.json({ isDemoMode: isDemoMode(env) });
+    }
+
+    // Demo login route
+    if (pathname === "/auth/demo" && request.method === "POST") {
+      if (!isDemoMode(env)) {
+        return new Response("Demo mode not enabled", { status: 403 });
+      }
+      
+      const demoUser = { 
+        id: "demo-user-123", 
+        email: "demo@example.com", 
+        name: "Demo User", 
+        provider: "demo",
+        role: "member"
+      };
+      
+      await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role) VALUES (?, ?, ?, ?, ?)`)
+        .bind(demoUser.id, demoUser.email, demoUser.name, demoUser.provider, demoUser.role)
+        .run();
+      
+      return Response.json({ success: true, user: demoUser });
+    }
+
+    // Analytics endpoint
+    if (pathname === "/analytics" && request.method === "POST") {
+      const body = await request.json();
+      console.log("Analytics Event:", body);
+      return Response.json({ success: true });
+    }
+
+    // Waitlist endpoint
+    if (pathname === "/waitlist" && request.method === "POST") {
+      const body = await request.json() as { email: string };
+      
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(body.email)) {
+        return Response.json({ success: false, message: "Invalid email format" }, { status: 400 });
+      }
+      
+      await env.DB.prepare(`INSERT INTO waitlist (id, email) VALUES (?, ?)`)
+        .bind(crypto.randomUUID(), body.email)
+        .run();
+      
+      return Response.json({ success: true });
     }
 
     // Admin check route
@@ -293,7 +349,7 @@ export default {
       }
 
       await env.DB.prepare(`UPDATE invites SET accepted = 1 WHERE token = ?`).bind(body.token).run();
-      return Response.json({ success: true, message: "Invitation accepted successfully!" });
+      return Response.json({ success: true, email: invite.email });
     }
 
     if (pathname === "/create-sample-notifications" && request.method === "POST") {

@@ -17,6 +17,42 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Rhythm90 Brand Colors */
+:root {
+  --rhythm-red: #dc2626;
+  --rhythm-black: #111827;
+  --rhythm-white: #ffffff;
+  --rhythm-gray: #6b7280;
+}
+
+/* Custom Tailwind Colors */
+@layer base {
+  .text-rhythmRed {
+    color: var(--rhythm-red);
+  }
+  .text-rhythmBlack {
+    color: var(--rhythm-black);
+  }
+  .text-rhythmWhite {
+    color: var(--rhythm-white);
+  }
+  .bg-rhythmRed {
+    background-color: var(--rhythm-red);
+  }
+  .bg-rhythmBlack {
+    background-color: var(--rhythm-black);
+  }
+  .bg-rhythmWhite {
+    background-color: var(--rhythm-white);
+  }
+  .border-rhythmRed {
+    border-color: var(--rhythm-red);
+  }
+  .border-rhythmBlack {
+    border-color: var(--rhythm-black);
+  }
+}
+
 a {
   font-weight: 500;
   color: #646cff;
@@ -28,10 +64,10 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--rhythm-white);
+  color: var(--rhythm-black);
 }
 
 h1 {
@@ -68,5 +104,44 @@ button:focus-visible {
   }
   button {
     background-color: #f9f9f9;
+  }
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: var(--rhythm-black);
+    color: var(--rhythm-white);
+  }
+}
+
+/* Animation utilities */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }

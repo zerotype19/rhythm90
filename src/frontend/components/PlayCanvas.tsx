@@ -4,20 +4,33 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 
 export default function PlayCanvas() {
   const [form, setForm] = useState({ name: "", target_outcome: "", why_this_play: "", how_to_run: "" });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await createPlay({ 
-      team_id: "team-123", 
-      signals: "",
-      status: "active",
-      ...form 
-    });
-    alert("Play created!");
-    setForm({ name: "", target_outcome: "", why_this_play: "", how_to_run: "" });
+    try {
+      await createPlay({ 
+        team_id: "team-123", 
+        signals: "",
+        status: "active",
+        ...form 
+      });
+      
+      // Track the play creation event
+      trackEvent(AnalyticsEvents.PLAY_CREATED, { 
+        playName: form.name,
+        targetOutcome: form.target_outcome 
+      });
+      
+      alert("Play created!");
+      setForm({ name: "", target_outcome: "", why_this_play: "", how_to_run: "" });
+    } catch (error) {
+      console.error("Failed to create play:", error);
+      alert("Failed to create play. Please try again.");
+    }
   };
 
   return (
