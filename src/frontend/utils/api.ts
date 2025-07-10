@@ -49,4 +49,24 @@ export async function createSignal(signal: Omit<Signal, "id" | "created_at">) {
   });
   if (!res.ok) throw new Error("Failed to create signal");
   return res.json();
+}
+
+export async function fetchAiSignal(observation: string): Promise<{ suggestion: string }> {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/ai-signal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ observation }),
+  });
+  if (!res.ok) throw new Error("Failed to get AI signal suggestion");
+  return res.json();
+}
+
+export async function fetchAiHypothesis(play_name: string): Promise<{ hypothesis: string }> {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/ai-hypothesis`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ play_name }),
+  });
+  if (!res.ok) throw new Error("Failed to get AI hypothesis");
+  return res.json();
 } 
