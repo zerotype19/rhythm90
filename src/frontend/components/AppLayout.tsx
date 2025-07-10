@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 import Navbar from "./Navbar";
 import PageLayout from "./PageLayout";
 
@@ -14,18 +14,24 @@ export default function AppLayout({
   children, 
   maxWidth = "7xl", 
   className = "",
-  showFooter = true 
+  showFooter 
 }: AppLayoutProps) {
-  const location = useLocation();
+  const { isAuthenticated, loading } = useAuth();
   
-  // Route-based detection for logged-in state
-  const isLoggedInRoute = [
-    '/dashboard', '/admin', '/team', '/workshop', '/analytics', 
-    '/integrations', '/settings', '/developer', '/training', 
-    '/public-api', '/enterprise', '/referrals', '/rnr-summary', '/changelog'
-  ].some(route => location.pathname.startsWith(route));
-  
-  const isAuthenticated = isLoggedInRoute;
+  // Footer rules: show on public pages by default, hide on logged-in pages
+  const shouldShowFooter = showFooter !== undefined ? showFooter : !isAuthenticated;
+
+  // Don't render until auth is loaded
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="animate-pulse bg-muted h-16"></div>
+        <main className="flex-1 flex items-center justify-center">
+          <div className="animate-pulse bg-muted h-8 w-32 rounded"></div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -40,7 +46,7 @@ export default function AppLayout({
       </main>
       
       {/* Footer - only show if enabled and on public pages */}
-      {showFooter && !isAuthenticated && (
+      {shouldShowFooter && (
         <footer className="border-t border-border bg-background py-6 mt-auto">
           <div className="mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
             <div className="flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">

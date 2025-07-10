@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
+import AppLayout from "../components/AppLayout";
 
 interface FAQItem {
   question: string;
@@ -58,10 +59,10 @@ export default function Help() {
   }, [searchTerm]);
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
+    <AppLayout maxWidth="4xl" className="py-8">
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold mb-4">Help Center</h1>
-        <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
+        <h1 className="text-4xl font-bold mb-4 text-foreground">Help Center</h1>
+        <p className="text-lg text-muted-foreground mb-6">
           Find answers to common questions about Rhythm90
         </p>
         
@@ -75,7 +76,7 @@ export default function Help() {
             className="w-full"
           />
           {searchTerm && (
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="text-sm text-muted-foreground mt-2">
               Found {filteredFaqs.length} result{filteredFaqs.length !== 1 ? 's' : ''}
             </p>
           )}
@@ -86,7 +87,7 @@ export default function Help() {
         {filteredFaqs.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
-              <p className="text-gray-500 dark:text-gray-400">
+              <p className="text-muted-foreground">
                 No results found for "{searchTerm}". Try a different search term.
               </p>
             </CardContent>
@@ -105,7 +106,7 @@ export default function Help() {
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                <p className="text-foreground leading-relaxed">
                   {faq.answer}
                 </p>
               </CardContent>
@@ -119,17 +120,17 @@ export default function Help() {
           <CardTitle className="text-2xl">Still need help?</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-gray-700 dark:text-gray-300 mb-4">
+          <p className="text-foreground mb-4">
             Can't find what you're looking for? We're here to help!
           </p>
           <div className="space-y-2">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-muted-foreground">
               📧 Email us at: <a href="mailto:support@rhythm90.io" className="text-blue-600 hover:underline">support@rhythm90.io</a>
             </p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-muted-foreground">
               💬 Join our community: <a href="#" className="text-blue-600 hover:underline">Discord</a>
             </p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-muted-foreground">
               📖 Check our documentation: <a href="#" className="text-blue-600 hover:underline">docs.rhythm90.io</a>
             </p>
           </div>
@@ -151,6 +152,6 @@ export default function Help() {
           </svg>
         </button>
       </div>
-    </div>
+    </AppLayout>
   );
 } 

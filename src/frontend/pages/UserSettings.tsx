@@ -75,7 +75,7 @@ export default function UserSettings() {
 
   if (!user) {
     return (
-      <AppLayout maxWidth="4xl" showFooter={false}>
+      <AppLayout maxWidth="4xl">
         <div className="text-center py-20">Loading user settings...</div>
       </AppLayout>
     );
@@ -90,7 +90,7 @@ export default function UserSettings() {
   const providerInfo = providerMap[user.provider as keyof typeof providerMap] || { name: "Unknown", icon: "❓", color: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200" };
 
   return (
-    <AppLayout maxWidth="4xl" className="py-8" showFooter={false}>
+    <AppLayout maxWidth="4xl" className="py-8">
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Sidebar */}
         <div className="lg:w-64 lg:flex-shrink-0">

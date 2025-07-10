@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { trackEvent, AnalyticsEvents } from "../hooks/useAnalytics";
 import { useExperiment } from "../hooks/useExperiment";
+import AppLayout from "../components/AppLayout";
 
 const plans = [
   {
@@ -82,158 +83,148 @@ export default function Pricing() {
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-8">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold text-rhythmBlack dark:text-white">
-          Choose Your Plan
-        </h1>
-        <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-          Start free and upgrade when you're ready. All plans include a 14-day free trial.
-        </p>
-      </div>
-
-      {/* Trial Banner */}
-      <Card className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border-blue-200 dark:border-blue-800">
-        <CardContent className="p-6 text-center">
-          <div className="flex items-center justify-center space-x-2 mb-2">
-            <span className="text-2xl">🎉</span>
-            <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-200">
-              14-Day Free Trial
-            </h3>
-          </div>
-          <p className="text-blue-700 dark:text-blue-300">
-            Try all Premium features free for 14 days. No credit card required.
+    <AppLayout maxWidth="6xl" className="py-8">
+      <div className="space-y-8">
+        <div className="text-center space-y-4">
+          <h1 className="text-4xl font-bold text-foreground">
+            Choose Your Plan
+          </h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            Start free and upgrade when you're ready. All plans include a 14-day free trial.
           </p>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Pricing Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-        {plans.map((plan, idx) => (
-          <Card 
-            key={plan.name} 
-            className={`relative transition-all hover:shadow-lg ${
-              plan.popular ? 'ring-2 ring-rhythmRed scale-105' : ''
-            } ${pricingVariant === "B" && idx === 1 ? 'border-4 border-yellow-400' : ''}`}
-          >
-            {plan.popular && (
-              <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-rhythmRed text-white">
-                Most Popular
-              </Badge>
-            )}
-            
-            <CardHeader className="text-center pb-4">
-              <CardTitle className="text-2xl">{plan.name}</CardTitle>
-              <div className="space-y-1">
-                <div className="flex items-baseline justify-center space-x-1">
-                  <span className="text-4xl font-bold">{plan.price}</span>
-                  <span className="text-gray-500">/{plan.period}</span>
+        {/* Trial Banner */}
+        <Card className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border-blue-200 dark:border-blue-800">
+          <CardContent className="p-6 text-center">
+            <div className="flex items-center justify-center space-x-2 mb-2">
+              <span className="text-2xl">🎉</span>
+              <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-200">
+                14-Day Free Trial
+              </h3>
+            </div>
+            <p className="text-blue-700 dark:text-blue-300">
+              Try all Premium features free for 14 days. No credit card required.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Pricing Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          {plans.map((plan, idx) => (
+            <Card 
+              key={plan.name} 
+              className={`relative transition-all hover:shadow-lg ${
+                plan.popular ? 'ring-2 ring-primary scale-105' : ''
+              } ${pricingVariant === "B" && idx === 1 ? 'border-4 border-yellow-400' : ''}`}
+            >
+              {plan.popular && (
+                <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-primary text-primary-foreground">
+                  Most Popular
+                </Badge>
+              )}
+              
+              <CardHeader className="text-center pb-4">
+                <CardTitle className="text-2xl">{plan.name}</CardTitle>
+                <div className="space-y-1">
+                  <div className="flex items-baseline justify-center space-x-1">
+                    <span className="text-4xl font-bold">{plan.price}</span>
+                    <span className="text-muted-foreground">/{plan.period}</span>
+                  </div>
+                  <p className="text-muted-foreground">{plan.description}</p>
                 </div>
-                <p className="text-gray-600 dark:text-gray-400">{plan.description}</p>
-              </div>
-            </CardHeader>
-            
-            <CardContent className="space-y-6">
-              {/* Features */}
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-900 dark:text-white">What's included:</h4>
-                <ul className="space-y-2">
-                  {plan.features.map((feature, index) => (
-                    <li key={index} className="flex items-center space-x-2">
-                      <span className="text-green-600">✓</span>
-                      <span className="text-sm">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Limitations */}
-              {plan.limitations.length > 0 && (
+              </CardHeader>
+              
+              <CardContent className="space-y-6">
+                {/* Features */}
                 <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-900 dark:text-white">Limitations:</h4>
+                  <h4 className="font-semibold text-foreground">What's included:</h4>
                   <ul className="space-y-2">
-                    {plan.limitations.map((limitation, index) => (
+                    {plan.features.map((feature, index) => (
                       <li key={index} className="flex items-center space-x-2">
-                        <span className="text-red-500">✗</span>
-                        <span className="text-sm text-gray-500">{limitation}</span>
+                        <span className="text-green-600">✓</span>
+                        <span className="text-sm">{feature}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
-              )}
 
-              {/* Action Button */}
-              <Button
-                variant={plan.buttonVariant}
-                className="w-full"
-                disabled={plan.disabled || loading === plan.name}
-                onClick={() => {
-                  if (!plan.disabled) {
-                    logEvent("interaction", { plan: plan.name });
-                    handleUpgrade(plan.name);
-                  }
-                }}
-              >
-                {loading === plan.name ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
-                    Processing...
-                  </>
-                ) : (
-                  pricingVariant === "C" && plan.name === "Premium"
-                    ? "Try Now"
-                    : plan.buttonText
+                {/* Limitations */}
+                {plan.limitations.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-foreground">Limitations:</h4>
+                    <ul className="space-y-2">
+                      {plan.limitations.map((limitation, index) => (
+                        <li key={index} className="flex items-center space-x-2">
+                          <span className="text-red-500">✗</span>
+                          <span className="text-sm text-muted-foreground">{limitation}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
 
-      {/* FAQ Section */}
-      <div className="max-w-3xl mx-auto">
-        <h2 className="text-2xl font-bold text-center mb-6 text-rhythmBlack dark:text-white">
-          Frequently Asked Questions
-        </h2>
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="font-semibold mb-2">Can I cancel anytime?</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Yes, you can cancel your subscription at any time. You'll continue to have access until the end of your billing period.
-              </p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="font-semibold mb-2">What happens after the trial?</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                After your 14-day trial, you'll be automatically charged for the Premium plan. You can cancel anytime before the trial ends.
-              </p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="font-semibold mb-2">Do you offer team discounts?</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Yes! Contact us for custom pricing for teams of 5+ users. We offer volume discounts and dedicated support.
-              </p>
-            </CardContent>
-          </Card>
+                {/* Action Button */}
+                <Button
+                  variant={plan.buttonVariant}
+                  className="w-full"
+                  disabled={plan.disabled || loading === plan.name}
+                  onClick={() => {
+                    if (!plan.disabled) {
+                      logEvent("interaction", { plan: plan.name });
+                      handleUpgrade(plan.name);
+                    }
+                  }}
+                >
+                  {loading === plan.name ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    pricingVariant === "C" && plan.name === "Premium"
+                      ? "Try Now"
+                      : plan.buttonText
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* FAQ Section */}
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-2xl font-bold text-center mb-6 text-foreground">
+            Frequently Asked Questions
+          </h2>
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-foreground mb-2">Can I cancel anytime?</h3>
+                <p className="text-muted-foreground text-sm">
+                  Yes, you can cancel your subscription at any time. You'll continue to have access until the end of your billing period.
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-foreground mb-2">What's included in the free trial?</h3>
+                <p className="text-muted-foreground text-sm">
+                  The 14-day free trial includes all Premium features, so you can experience the full power of Rhythm90 before committing.
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-foreground mb-2">Do you offer team discounts?</h3>
+                <p className="text-muted-foreground text-sm">
+                  Yes! Contact us for custom pricing for teams of 10+ users. We offer volume discounts and enterprise features.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
-
-      {/* Contact Support */}
-      <div className="text-center">
-        <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Need help choosing a plan?
-        </p>
-        <Button variant="outline" onClick={() => window.location.href = 'mailto:support@rhythm90.io'}>
-          Contact Support
-        </Button>
-      </div>
-    </div>
+    </AppLayout>
   );
 } 

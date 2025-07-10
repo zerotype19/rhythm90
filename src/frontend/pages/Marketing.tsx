@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { useExperiment } from "../hooks/useExperiment";
+import AppLayout from "../components/AppLayout";
 
 const testimonials = [
   {
@@ -74,7 +75,7 @@ export default function Marketing() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+    <AppLayout maxWidth="7xl" className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       {/* Hero Section */}
       <section className="py-20 px-4">
         <div className="max-w-6xl mx-auto text-center">
@@ -199,23 +200,23 @@ export default function Marketing() {
             <Card className="hover:shadow-lg transition-all">
               <CardHeader>
                 <div className="text-3xl mb-2">📈</div>
-                <CardTitle>Analytics Dashboard</CardTitle>
+                <CardTitle>Analytics & Reporting</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-gray-600 dark:text-gray-300">
-                  Visualize your marketing performance with comprehensive analytics and reporting.
+                  Track performance metrics and generate insights to optimize your marketing strategies.
                 </p>
               </CardContent>
             </Card>
 
             <Card className="hover:shadow-lg transition-all">
               <CardHeader>
-                <div className="text-3xl mb-2">🔄</div>
-                <CardTitle>R&R Summaries</CardTitle>
+                <div className="text-3xl mb-2">🔗</div>
+                <CardTitle>Integrations</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-gray-600 dark:text-gray-300">
-                  Weekly retrospectives and planning sessions to continuously improve your marketing strategy.
+                  Connect with your existing tools and workflows for seamless data flow.
                 </p>
               </CardContent>
             </Card>
@@ -228,28 +229,28 @@ export default function Marketing() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
-              Loved by marketing teams
+              Loved by marketing teams everywhere
             </h2>
             <p className="text-xl text-gray-600 dark:text-gray-300">
-              See what our beta users are saying about Rhythm90.
+              See what our users are saying about Rhythm90
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {testimonials.map((testimonial, index) => (
-              <Card key={index} className="hover:shadow-lg transition-all">
-                <CardContent className="p-6">
+              <Card key={index} className="p-6">
+                <CardContent className="p-0">
                   <div className="flex items-start space-x-4">
                     <div className="text-3xl">{testimonial.avatar}</div>
                     <div className="flex-1">
-                      <p className="text-gray-700 dark:text-gray-300 mb-4 italic">
+                      <p className="text-gray-600 dark:text-gray-300 mb-4 italic">
                         "{testimonial.quote}"
                       </p>
                       <div>
                         <p className="font-semibold text-gray-900 dark:text-white">
                           {testimonial.name}
                         </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
                           {testimonial.role} at {testimonial.company}
                         </p>
                       </div>
@@ -262,34 +263,17 @@ export default function Marketing() {
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section id="waitlist" className="py-20 px-4 bg-blue-600 dark:bg-blue-700">
+      {/* Waitlist Section */}
+      <section id="waitlist" className="py-20 px-4 bg-white dark:bg-gray-900">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-4xl font-bold text-white mb-4">
-            Ready to transform your marketing intelligence?
+          <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            Get early access to Rhythm90
           </h2>
-          <p className="text-xl text-blue-100 mb-8">
-            Join the waitlist to get early access to Rhythm90 and start tracking your marketing signals like never before.
+          <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
+            Join the waitlist and be among the first to experience the future of marketing intelligence.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-            <a 
-              href="mailto:support@rhythm90.io?subject=Rhythm90.io%20Beta%20Access%20Request&body=Hi%20Team%2C%0A%0AI'd%20love%20to%20join%20the%20Rhythm90.io%20beta%20to%20improve%20our%20marketing%20ops.%20Please%20send%20me%20access%20details!%0A%0ABest%2C%0A%5BName%5D"
-              className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-blue-600 bg-white hover:bg-gray-50 transition-colors"
-            >
-              📧 Request Demo
-            </a>
-          </div>
-
-          {submitted ? (
-            <Card className="max-w-md mx-auto bg-green-50 dark:bg-green-900">
-              <CardContent className="p-6">
-                <p className="text-green-800 dark:text-green-200 font-semibold">
-                  ✅ You're on the list! We'll notify you when Rhythm90 launches.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
+          {!submitted ? (
             <form onSubmit={handleWaitlistSubmit} className="max-w-md mx-auto">
               <div className="flex flex-col sm:flex-row gap-4">
                 <Input
@@ -297,39 +281,31 @@ export default function Marketing() {
                   placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="flex-1"
                   required
+                  className="flex-1"
                 />
                 <Button 
                   type="submit" 
-                  disabled={submitting || !email.trim()}
-                  className="bg-white text-blue-600 hover:bg-gray-100"
+                  disabled={submitting}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {submitting ? "Joining..." : "Join Waitlist"}
                 </Button>
               </div>
             </form>
+          ) : (
+            <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
+              <div className="text-green-600 dark:text-green-400 text-2xl mb-2">✅</div>
+              <h3 className="text-lg font-semibold text-green-800 dark:text-green-200 mb-2">
+                You're on the list!
+              </h3>
+              <p className="text-green-700 dark:text-green-300">
+                We'll notify you when Rhythm90 is ready for you.
+              </p>
+            </div>
           )}
-
-          <p className="text-blue-200 mt-4 text-sm">
-            No spam, ever. Unsubscribe at any time.
-          </p>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="py-12 px-4 bg-gray-900 text-white">
-        <div className="max-w-6xl mx-auto text-center">
-          <p className="text-gray-400">
-            © 2024 Rhythm90.io. All rights reserved.
-          </p>
-          <div className="mt-4 space-x-4">
-            <a href="/help" className="text-blue-400 hover:text-blue-300">Help</a>
-            <a href="/pricing" className="text-blue-400 hover:text-blue-300">Pricing</a>
-            <a href="mailto:support@rhythm90.io" className="text-blue-400 hover:text-blue-300">Support</a>
-          </div>
-        </div>
-      </footer>
-    </div>
+    </AppLayout>
   );
 } 

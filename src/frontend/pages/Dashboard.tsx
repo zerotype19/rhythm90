@@ -33,7 +33,7 @@ export default function Dashboard() {
   if (loading) return <Loading />;
 
   return (
-    <AppLayout maxWidth="7xl" className="py-8" showFooter={false}>
+    <AppLayout maxWidth="7xl" className="py-8">
       <OnboardingSidebar />
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>

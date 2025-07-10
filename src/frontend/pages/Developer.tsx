@@ -103,7 +103,7 @@ export default function Developer() {
   };
 
   return (
-    <AppLayout maxWidth="7xl" className="py-8" showFooter={false}>
+    <AppLayout maxWidth="7xl" className="py-8">
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Sidebar */}
         <div className="lg:w-64 lg:flex-shrink-0">

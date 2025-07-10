@@ -6,7 +6,7 @@ import AppLayout from "../components/AppLayout";
 
 export default function Landing() {
   return (
-    <AppLayout maxWidth="7xl" className="py-8" showFooter={true}>
+    <AppLayout maxWidth="7xl" className="py-8">
       {/* Hero Section */}
       <div className="text-center mb-16">
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-foreground mb-6">
