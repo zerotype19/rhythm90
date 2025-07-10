@@ -195,53 +195,34 @@ export default {
       const payload = await request.json();
       const text = payload.text.toLowerCase();
 
-      if (text.startsWith("/log-signal")) {
-        const parts = text.split("|");
-        if (parts.length !== 5) {
-          return Response.json({ 
-            ok: false, 
-            message: "Invalid format. Use /log-signal | play-id | observation | meaning | action" 
-          });
-        }
-        
-        const [_, playId, observation, meaning, action] = parts;
-        const userId = "user-123";
-        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
-        const teamId = userTeam ? userTeam.team_id : "default-team";
-        
-        // Verify the play belongs to the user's team
-        const play = await env.DB.prepare(`SELECT id FROM plays WHERE id = ? AND team_id = ?`).bind(playId.trim(), teamId).first();
-        if (!play) {
-          return Response.json({ ok: false, message: "Play not found or access denied." });
-        }
-        
-        await env.DB.prepare(`INSERT INTO signals (id, play_id, observation, meaning, action) VALUES (?, ?, ?, ?, ?)`)
-          .bind(crypto.randomUUID(), playId.trim(), observation.trim(), meaning.trim(), action.trim())
-          .run();
-        return Response.json({ ok: true, message: "Signal logged." });
-      }
+      try {
+        if (text.startsWith("/log-signal")) {
+          const [_, playId, observation, meaning, action] = text.split("|").map(s => s.trim());
+          if (!playId || !observation || !meaning || !action) throw new Error("Invalid format. Use /log-signal | playId | observation | meaning | action");
 
-      if (text.startsWith("/new-play")) {
-        const parts = text.split("|");
-        if (parts.length !== 3) {
-          return Response.json({ 
-            ok: false, 
-            message: "Invalid format. Use /new-play | name | target outcome" 
-          });
-        }
-        
-        const [_, name, outcome] = parts;
-        const userId = "user-123";
-        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
-        const teamId = userTeam ? userTeam.team_id : "default-team";
-        
-        await env.DB.prepare(`INSERT INTO plays (id, team_id, name, target_outcome, status) VALUES (?, ?, ?, ?, ?)`)
-          .bind(crypto.randomUUID(), teamId, name.trim(), outcome.trim(), "active")
-          .run();
-        return Response.json({ ok: true, message: "Play created." });
-      }
+          await env.DB.prepare(`INSERT INTO signals (id, play_id, observation, meaning, action) VALUES (?, ?, ?, ?, ?)`)
+            .bind(crypto.randomUUID(), playId, observation, meaning, action)
+            .run();
 
-      return Response.json({ ok: true, message: "Command received." });
+          return Response.json({ text: `✅ Signal logged for play ${playId}.` });
+        }
+
+        if (text.startsWith("/new-play")) {
+          const [_, name, outcome] = text.split("|").map(s => s.trim());
+          if (!name || !outcome) throw new Error("Invalid format. Use /new-play | name | outcome");
+
+          await env.DB.prepare(`INSERT INTO plays (id, team_id, name, target_outcome, status) VALUES (?, ?, ?, ?, ?)`)
+            .bind(crypto.randomUUID(), "team-123", name, outcome, "active")
+            .run();
+
+          return Response.json({ text: `✅ Play "${name}" created.` });
+        }
+
+        return Response.json({ text: "🤖 Unknown command." });
+
+      } catch (error) {
+        return Response.json({ text: `⚠️ ${error.message}` });
+      }
     }
 
     return new Response("Not Found", { status: 404 });
