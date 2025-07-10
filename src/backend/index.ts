@@ -1,4 +1,5 @@
 /// <reference types="@cloudflare/workers-types" />
+// Stripe Node SDK import removed for Worker compatibility
 
 export interface Env {
   DB: D1Database;
@@ -6,6 +7,8 @@ export interface Env {
   APP_URL?: string;
   DEMO_MODE?: string;
   PREMIUM_MODE?: string;
+  STRIPE_SECRET_KEY: string;
+  STRIPE_WEBHOOK_SECRET: string;
 }
 
 // Helper function to check if user is admin
@@ -195,17 +198,150 @@ export default {
       return Response.json({ success: true, message: "Password updated successfully" });
     }
 
+    // Stripe Integration
+    if (pathname === "/create-checkout-session" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const body = await request.json() as { plan: string };
+      const appUrl = env.APP_URL || "https://rhythm90.io";
+      
+      try {
+        // Get user's team
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam && typeof userTeam.team_id === 'string' ? userTeam.team_id : "default-team";
+        
+        // Get or create Stripe customer
+        let stripeCustomerId: string | undefined;
+        const team = await env.DB.prepare(`SELECT stripe_customer_id FROM teams WHERE id = ?`).bind(teamId).first();
+        
+        if (team && typeof team.stripe_customer_id === 'string' && team.stripe_customer_id.length > 0) {
+          stripeCustomerId = team.stripe_customer_id;
+        } else {
+          const user = await env.DB.prepare(`SELECT email, name FROM users WHERE id = ?`).bind(userId).first();
+          const email = user && typeof user.email === 'string' ? user.email : 'user@example.com';
+          const name = user && typeof user.name === 'string' ? user.name : 'User';
+          // Create customer via Stripe API
+          const customerRes = await fetch('https://api.stripe.com/v1/customers', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              email: String(email),
+              name: String(name),
+              'metadata[team_id]': String(teamId),
+              'metadata[user_id]': String(userId)
+            })
+          });
+          const customerData = await customerRes.json() as any;
+          if (!customerRes.ok || !customerData.id) throw new Error('Failed to create Stripe customer');
+          stripeCustomerId = customerData.id;
+          // Update team with Stripe customer ID
+          await env.DB.prepare(`UPDATE teams SET stripe_customer_id = ? WHERE id = ?`).bind(stripeCustomerId, teamId).run();
+        }
+
+        if (!stripeCustomerId) {
+          throw new Error('Stripe customer ID not found or created');
+        }
+
+        // Create checkout session via Stripe API
+        const sessionRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            customer: String(stripeCustomerId),
+            mode: 'subscription',
+            success_url: `${appUrl}/dashboard?success=true`,
+            cancel_url: `${appUrl}/pricing?canceled=true`,
+            'line_items[0][price_data][currency]': 'usd',
+            'line_items[0][price_data][product_data][name]': body.plan === 'pro' ? 'Rhythm90 Pro' : 'Rhythm90 Premium',
+            'line_items[0][price_data][product_data][description]': body.plan === 'pro' ? 'Professional marketing analytics' : 'Premium marketing suite',
+            'line_items[0][price_data][unit_amount]': (body.plan === 'pro' ? 2900 : 4900).toString(),
+            'line_items[0][price_data][recurring][interval]': 'month',
+            'line_items[0][quantity]': '1',
+            'metadata[team_id]': String(teamId),
+            'metadata[user_id]': String(userId),
+            'metadata[plan]': String(body.plan)
+          })
+        });
+        const sessionData = await sessionRes.json() as any;
+        if (!sessionRes.ok || !sessionData.url) throw new Error('Failed to create Stripe checkout session');
+
+        return Response.json({ 
+          success: true, 
+          checkoutUrl: sessionData.url,
+          sessionId: sessionData.id
+        });
+      } catch (error) {
+        console.error('Stripe checkout error:', error);
+        return Response.json({ 
+          success: false, 
+          message: "Failed to create checkout session" 
+        }, { status: 500 });
+      }
+    }
+
+    if (pathname === "/stripe-webhook" && request.method === "POST") {
+      try {
+        // Read raw body for signature verification
+        const body = await request.text();
+        const signature = request.headers.get('stripe-signature');
+        if (!signature) {
+          return new Response('No signature', { status: 400 });
+        }
+        // TODO: Implement signature verification using crypto.subtle (see Stripe docs)
+        // For now, skip verification for dev
+        let event: any;
+        try {
+          event = JSON.parse(body);
+        } catch (err) {
+          return new Response('Invalid JSON', { status: 400 });
+        }
+        // Log webhook event
+        await env.DB.prepare(`INSERT INTO webhook_logs (id, event_type, payload, status) VALUES (?, ?, ?, ?)`).bind(crypto.randomUUID(), event.type, body, 'processing').run();
+        // Handle the event
+        switch (event.type) {
+          case 'checkout.session.completed': {
+            const session = event.data.object;
+            const teamId = session.metadata?.team_id;
+            const plan = session.metadata?.plan;
+            if (teamId) {
+              await env.DB.prepare(`UPDATE teams SET billing_status = ? WHERE id = ?`).bind(plan === 'pro' ? 'pro' : 'premium', teamId).run();
+              await env.DB.prepare(`UPDATE users SET is_premium = 1 WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)`).bind(teamId).run();
+            }
+            break;
+          }
+          case 'customer.subscription.deleted': {
+            const subscription = event.data.object;
+            const customerId = subscription.customer;
+            const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
+            if (team) {
+              await env.DB.prepare(`UPDATE teams SET billing_status = 'free' WHERE id = ?`).bind(team.id).run();
+              await env.DB.prepare(`UPDATE users SET is_premium = 0 WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)`).bind(team.id).run();
+            }
+            break;
+          }
+        }
+        await env.DB.prepare(`UPDATE webhook_logs SET status = 'success' WHERE payload = ?`).bind(body).run();
+        return new Response('Webhook processed', { status: 200 });
+      } catch (error) {
+        console.error('Webhook processing error:', error);
+        return new Response('Webhook processing failed', { status: 500 });
+      }
+    }
+
     // Premium features
     if (pathname === "/checkout" && request.method === "POST") {
       const userId = getCurrentUserId();
       const body = await request.json() as { plan: string };
       
-      // TODO: Integrate with Stripe
-      console.log(`Creating checkout session for user ${userId}, plan: ${body.plan}`);
-      
+      // Redirect to new checkout endpoint
       return Response.json({ 
         success: true, 
-        checkoutUrl: "https://checkout.stripe.com/pay/cs_test_placeholder", // Placeholder
+        redirectTo: "/create-checkout-session",
         message: "Redirecting to checkout..." 
       });
     }
