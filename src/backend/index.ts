@@ -3046,6 +3046,237 @@ export default {
       }
     }
 
+    // Enterprise: Update custom domain
+    if (pathname === "/enterprise/domain" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { customDomain: string };
+
+      // Validate domain format
+      const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+      if (!domainRegex.test(body.customDomain)) {
+        return Response.json({ success: false, message: "Invalid domain format" }, { status: 400 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        await env.DB.prepare(`
+          UPDATE teams SET custom_domain = ? WHERE id = ?
+        `).bind(body.customDomain, teamId).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Custom domain updated. Please configure your DNS settings.",
+          dnsInstructions: {
+            type: "CNAME",
+            name: body.customDomain,
+            value: "rhythm90.io"
+          }
+        });
+      } catch (error) {
+        console.error('Failed to update custom domain:', error);
+        return Response.json({ success: false, message: "Failed to update custom domain" }, { status: 500 });
+      }
+    }
+
+    // Enterprise: Get SAML config
+    if (pathname === "/enterprise/saml" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const userTeam = await env.DB.prepare(`SELECT team_id FROM team_users WHERE user_id = ?`).bind(userId).first();
+        const teamId = userTeam?.team_id as string;
+
+        if (!teamId) {
+          return Response.json({ success: false, message: "Team not found" }, { status: 404 });
+        }
+
+        const samlConfig = await env.DB.prepare(`
+          SELECT * FROM saml_config WHERE team_id = ?
+        `).bind(teamId).first();
+
+        return Response.json({ 
+          success: true, 
+          samlConfig: samlConfig || null,
+          status: "coming_soon"
+        });
+      } catch (error) {
+        console.error('Failed to get SAML config:', error);
+        return Response.json({ success: false, message: "Failed to get SAML config" }, { status: 500 });
+      }
+    }
+
+    // Integrations: List available integrations
+    if (pathname === "/integrations/list" && request.method === "GET") {
+      const integrations = [
+        {
+          id: "slack",
+          name: "Slack",
+          description: "Connect your Slack workspace for real-time notifications and signal logging",
+          status: "available",
+          icon: "💬",
+          connected: false
+        },
+        {
+          id: "teams",
+          name: "Microsoft Teams",
+          description: "Integrate with Microsoft Teams for team collaboration",
+          status: "coming_soon",
+          icon: "🏢",
+          connected: false
+        },
+        {
+          id: "zapier",
+          name: "Zapier",
+          description: "Connect with 5000+ apps through Zapier automation",
+          status: "beta",
+          icon: "⚡",
+          connected: false
+        },
+        {
+          id: "hubspot",
+          name: "HubSpot",
+          description: "Sync marketing data and contacts with HubSpot CRM",
+          status: "coming_soon",
+          icon: "📊",
+          connected: false
+        },
+        {
+          id: "salesforce",
+          name: "Salesforce",
+          description: "Integrate with Salesforce for customer data and analytics",
+          status: "coming_soon",
+          icon: "☁️",
+          connected: false
+        }
+      ];
+
+      return Response.json({ integrations });
+    }
+
+    // Integrations: Connect integration (mock)
+    if (pathname === "/integrations/connect" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json() as { integrationId: string };
+
+      // Mock connection - in real implementation, this would handle OAuth flow
+      return Response.json({ 
+        success: true, 
+        message: `Successfully connected ${body.integrationId}`,
+        connected: true
+      });
+    }
+
+    // Referrals: Generate referral code
+    if (pathname === "/referrals/generate" && request.method === "POST") {
+      const userId = getCurrentUserId();
+      
+      try {
+        // Generate unique referral code
+        const referralCode = `REF${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+        
+        await env.DB.prepare(`
+          UPDATE users SET referral_code = ? WHERE id = ?
+        `).bind(referralCode, userId).run();
+
+        return Response.json({ 
+          success: true, 
+          referralCode,
+          referralLink: `https://rhythm90.io/ref/${referralCode}`
+        });
+      } catch (error) {
+        console.error('Failed to generate referral code:', error);
+        return Response.json({ success: false, message: "Failed to generate referral code" }, { status: 500 });
+      }
+    }
+
+    // Referrals: Get user's referral stats
+    if (pathname === "/referrals/stats" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      
+      try {
+        const user = await env.DB.prepare(`
+          SELECT referral_code FROM users WHERE id = ?
+        `).bind(userId).first();
+
+        const referrals = await env.DB.prepare(`
+          SELECT COUNT(*) as total_referrals,
+                 SUM(CASE WHEN reward_status = 'completed' THEN 1 ELSE 0 END) as completed_referrals,
+                 SUM(CASE WHEN reward_status = 'pending' THEN 1 ELSE 0 END) as pending_referrals
+          FROM referrals WHERE referrer_user_id = ?
+        `).bind(userId).first();
+
+        return Response.json({ 
+          success: true, 
+          referralCode: user?.referral_code || null,
+          referralLink: user?.referral_code ? `https://rhythm90.io/ref/${user.referral_code}` : null,
+          stats: {
+            total: referrals?.total_referrals || 0,
+            completed: referrals?.completed_referrals || 0,
+            pending: referrals?.pending_referrals || 0
+          }
+        });
+      } catch (error) {
+        console.error('Failed to get referral stats:', error);
+        return Response.json({ success: false, message: "Failed to get referral stats" }, { status: 500 });
+      }
+    }
+
+    // Referrals: Process referral (when new user signs up with referral code)
+    if (pathname === "/referrals/process" && request.method === "POST") {
+      const body = await request.json() as { referralCode: string; userId: string };
+
+      try {
+        // Find referrer
+        const referrer = await env.DB.prepare(`
+          SELECT id FROM users WHERE referral_code = ?
+        `).bind(body.referralCode).first();
+
+        if (!referrer) {
+          return Response.json({ success: false, message: "Invalid referral code" }, { status: 400 });
+        }
+
+        // Create referral record
+        await env.DB.prepare(`
+          INSERT INTO referrals (id, referrer_user_id, referred_user_id, referral_code, reward_status)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          referrer.id,
+          body.userId,
+          body.referralCode,
+          'pending'
+        ).run();
+
+        return Response.json({ 
+          success: true, 
+          message: "Referral processed successfully"
+        });
+      } catch (error) {
+        console.error('Failed to process referral:', error);
+        return Response.json({ success: false, message: "Failed to process referral" }, { status: 500 });
+      }
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 };

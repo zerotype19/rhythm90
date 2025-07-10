@@ -27,6 +27,9 @@ export default function Navbar() {
           <Link to="/analytics" className="hover:text-rhythmRed">Analytics</Link>
           <Link to="/public-api" className="hover:text-rhythmRed">API</Link>
           <Link to="/developer" className="hover:text-rhythmRed">Developer</Link>
+          <Link to="/enterprise" className="hover:text-rhythmRed">Enterprise</Link>
+          <Link to="/integrations" className="hover:text-rhythmRed">Integrations</Link>
+          <Link to="/referrals" className="hover:text-rhythmRed">Referrals</Link>
           <Link to="/rnr-summary" className="hover:text-rhythmRed">R&R Summary</Link>
           <Link to="/help" className="hover:text-rhythmRed">Help</Link>
           <Link to="/changelog" className="hover:text-rhythmRed relative">

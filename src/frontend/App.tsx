@@ -24,6 +24,9 @@ import Workshop from './pages/Workshop';
 import Analytics from './pages/Analytics';
 import PublicApi from './pages/PublicApi';
 import Developer from './pages/Developer';
+import Enterprise from './pages/Enterprise';
+import Integrations from './pages/Integrations';
+import Referrals from './pages/Referrals';
 import { trackEvent, AnalyticsEvents } from './hooks/useAnalytics';
 import { useOnboarding } from './hooks/useOnboarding';
 import OnboardingTour from './components/OnboardingTour';
@@ -59,6 +62,9 @@ function AppContent() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/public-api" element={<PublicApi />} />
           <Route path="/developer" element={<Developer />} />
+          <Route path="/enterprise" element={<Enterprise />} />
+          <Route path="/integrations" element={<Integrations />} />
+          <Route path="/referrals" element={<Referrals />} />
           <Route path="/login" element={<Login />} />
           <Route path="/rnr-summary" element={<RnRSummary />} />
           <Route path="/admin" element={<Admin />} />

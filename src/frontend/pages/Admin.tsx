@@ -778,17 +778,14 @@ export default function Admin() {
       {/* Slack Integration Section */}
       <SlackIntegrationSection />
 
+      {/* Enterprise Features Section */}
+      <EnterpriseFeaturesSection />
+
       {/* Notification Sending Section */}
       <NotificationSendingSection />
 
       {/* Subscription Management Section */}
       <SubscriptionManagementSection />
-
-      {/* Changelog Management Section */}
-      <ChangelogManagementSection />
-
-      {/* Feedback Management Section */}
-      <FeedbackManagementSection />
     </div>
   );
 }
@@ -1760,6 +1757,124 @@ function SubscriptionManagementSection() {
               ))}
             </div>
           )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+} 
+
+// Enterprise Features Section Component
+function EnterpriseFeaturesSection() {
+  const [teams, setTeams] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTeams();
+  }, []);
+
+  async function loadTeams() {
+    try {
+      const response = await fetch('/admin');
+      const data = await response.json();
+      setTeams(data.teams || []);
+    } catch (error) {
+      console.error('Failed to load teams:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>🏢 Enterprise Features</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center">Loading enterprise features...</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>🏢 Enterprise Features</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          {/* Custom Domains */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Custom Domains</h3>
+            <div className="space-y-3">
+              {teams.map((team) => (
+                <div key={team.id} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">{team.name}</h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {team.custom_domain || 'No custom domain configured'}
+                      </p>
+                    </div>
+                    <Badge variant={team.custom_domain ? "default" : "secondary"}>
+                      {team.custom_domain ? 'Configured' : 'Not Set'}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* SAML SSO */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">SAML SSO Configuration</h3>
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
+              <p className="text-sm text-yellow-800 dark:text-yellow-400">
+                SAML SSO is coming soon! This feature will allow enterprise customers to configure 
+                single sign-on for their organization.
+              </p>
+            </div>
+          </div>
+
+          {/* Integrations Status */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Integrations Overview</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="border rounded-lg p-4">
+                <h4 className="font-medium mb-2">Slack</h4>
+                <Badge className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                  Available
+                </Badge>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Real-time notifications and signal logging
+                </p>
+              </div>
+              <div className="border rounded-lg p-4">
+                <h4 className="font-medium mb-2">Zapier</h4>
+                <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                  Beta
+                </Badge>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Connect with 5000+ apps
+                </p>
+              </div>
+              <div className="border rounded-lg p-4">
+                <h4 className="font-medium mb-2">Microsoft Teams</h4>
+                <Badge variant="secondary">Coming Soon</Badge>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Team collaboration integration
+                </p>
+              </div>
+              <div className="border rounded-lg p-4">
+                <h4 className="font-medium mb-2">HubSpot</h4>
+                <Badge variant="secondary">Coming Soon</Badge>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  CRM and marketing data sync
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
