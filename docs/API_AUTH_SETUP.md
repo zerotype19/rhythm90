@@ -34,44 +34,53 @@ GOOGLE_CLIENT_SECRET=your_client_secret_here
 - `email` - User's email address
 - `profile` - User's basic profile info
 
-## Microsoft OAuth Setup
+## Microsoft OAuth Setup (Azure)
 
-### 1. Create Azure App Registration
-
+### 1. Register the App in Azure Portal
 1. Go to [Azure Portal](https://portal.azure.com/)
-2. Navigate to "Azure Active Directory" > "App registrations"
-3. Click "New registration"
-4. Enter app name: "Rhythm90"
-5. Select "Accounts in any organizational directory and personal Microsoft accounts"
-6. Set redirect URI: `https://rhythm90.io/auth/callback/microsoft`
+2. Navigate to **Azure Active Directory** > **App registrations**
+3. Click **New registration**
+4. Name your app (e.g., Rhythm90)
+5. Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**
+6. Redirect URI:
+   - For production: `https://rhythm90.io/auth/callback/microsoft`
+   - For staging: `https://staging.rhythm90.io/auth/callback/microsoft`
+   - (Set this as `MICROSOFT_REDIRECT_URI` in your environment)
+7. Click **Register**
 
-### 2. Configure Permissions
+### 2. Configure API Permissions
+1. Go to **API permissions**
+2. Click **Add a permission** > **Microsoft Graph** > **Delegated permissions**
+3. Add:
+   - `User.Read`
+   - `openid`
+   - `email`
+   - `profile`
+4. Click **Add permissions**
+5. Click **Grant admin consent** for your tenant
 
-1. Go to "API permissions"
-2. Add Microsoft Graph permissions:
-   - `User.Read` (delegated)
-   - `User.ReadBasic.All` (delegated)
-3. Grant admin consent
+### 3. Create Client Secret
+1. Go to **Certificates & secrets**
+2. Click **New client secret**
+3. Add a description and expiration
+4. Copy the value (you won't see it again!)
 
-### 3. Get Credentials
-
-1. Go to "Certificates & secrets"
-2. Create a new client secret
-3. Copy the Application (client) ID and client secret
-
-### 4. Environment Variables
-
-Add to your environment:
-```bash
-MICROSOFT_CLIENT_ID=your_client_id_here
-MICROSOFT_CLIENT_SECRET=your_client_secret_here
+### 4. Set Environment Variables
+Add these to your Cloudflare Worker environment:
+```
+MICROSOFT_CLIENT_ID=your-azure-client-id
+MICROSOFT_CLIENT_SECRET=your-azure-client-secret
+MICROSOFT_REDIRECT_URI=https://rhythm90.io/auth/callback/microsoft
 ```
 
-### 5. Required Scopes
+### 5. Troubleshooting Tips
+- **Missing Consent**: If users see a consent screen or error, ensure admin consent is granted for all required permissions.
+- **Invalid Redirect URI**: Make sure the redirect URI in Azure matches exactly what you set in your environment and what is used in the code.
+- **Missing Permissions**: If user info is missing, double-check that all required permissions are added and consented.
+- **Token Errors**: Ensure the client secret is valid and not expired. If you rotate secrets, update your environment variables immediately.
+- **Account Types**: The app must support both personal and work/school accounts for broad compatibility.
 
-- `openid` - OpenID Connect
-- `email` - User's email address
-- `profile` - User's basic profile info
+---
 
 ## Slack OAuth Setup
 

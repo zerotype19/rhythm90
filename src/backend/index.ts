@@ -17,6 +17,7 @@ export interface Env {
   MICROSOFT_CLIENT_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  MICROSOFT_REDIRECT_URI?: string;
 }
 
 // Helper function to check if user is admin
@@ -539,12 +540,16 @@ export default {
     }
 
     if (pathname === "/auth/login/microsoft" && request.method === "GET") {
-      const redirectUri = `${appUrl}/auth/callback/microsoft`;
+      const redirectUri = env.MICROSOFT_REDIRECT_URI || `${appUrl}/auth/callback/microsoft`;
       const state = crypto.randomUUID();
-      const scope = "openid email profile";
-      
+      const scope = [
+        "https://graph.microsoft.com/User.Read",
+        "openid",
+        "email",
+        "profile"
+      ].join(" ");
+
       const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${env.MICROSOFT_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${state}`;
-      
       return Response.redirect(authUrl);
     }
 
@@ -611,7 +616,8 @@ export default {
     if (pathname === "/auth/callback/microsoft" && request.method === "GET") {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
-      
+      const redirectUri = env.MICROSOFT_REDIRECT_URI || `${appUrl}/auth/callback/microsoft`;
+
       if (!code) {
         return Response.redirect(`${appUrl}/login?error=no_code`);
       }
@@ -626,30 +632,64 @@ export default {
             client_secret: env.MICROSOFT_CLIENT_SECRET!,
             code,
             grant_type: "authorization_code",
-            redirect_uri: `${appUrl}/auth/callback/microsoft`
+            redirect_uri: redirectUri,
+            scope: [
+              "https://graph.microsoft.com/User.Read",
+              "openid",
+              "email",
+              "profile"
+            ].join(" ")
           })
         });
 
         const tokenData = await tokenResponse.json() as { access_token: string; refresh_token?: string; expires_in: number };
-        
-        // Get user info
+
+        // Get user info from Microsoft Graph
         const userResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
           headers: { "Authorization": `Bearer ${tokenData.access_token}` }
         });
-        
-        const userData = await userResponse.json() as { id: string; userPrincipalName: string; displayName: string };
-        
-        // Create or update user
-        const userId = crypto.randomUUID();
-        await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`)
-          .bind(userId, userData.userPrincipalName, userData.displayName, "microsoft", "member", false)
-          .run();
-        
-        // Store OAuth provider data
-        await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-          .bind(userId, "microsoft", userData.id, userData.userPrincipalName, userData.displayName, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000)
-          .run();
-        
+        const userData = await userResponse.json() as { id: string; userPrincipalName: string; displayName: string; mail?: string };
+
+        // Try to get avatar (optional)
+        let avatar: string | null = null;
+        try {
+          const photoResponse = await fetch("https://graph.microsoft.com/v1.0/me/photo/$value", {
+            headers: { "Authorization": `Bearer ${tokenData.access_token}` }
+          });
+          if (photoResponse.ok) {
+            const photoArrayBuffer = await photoResponse.arrayBuffer();
+            // Convert ArrayBuffer to base64 string (Cloudflare Workers compatible)
+            let binary = '';
+            const bytes = new Uint8Array(photoArrayBuffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            avatar = `data:image/jpeg;base64,${btoa(binary)}`;
+          }
+        } catch (e) {
+          avatar = null;
+        }
+
+        // Use email from mail or userPrincipalName
+        const email = userData.mail || userData.userPrincipalName;
+        const name = userData.displayName;
+        const providerUserId = userData.id;
+
+        // Check if user already exists by email
+        let user = await env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first();
+        let userId: string;
+        if (user) {
+          userId = user.id;
+          // Optionally update name if changed
+          await env.DB.prepare(`UPDATE users SET name = ? WHERE id = ?`).bind(name, userId).run();
+        } else {
+          userId = crypto.randomUUID();
+          await env.DB.prepare(`INSERT INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`).bind(userId, email, name, "microsoft", "member", false).run();
+        }
+
+        // Store OAuth provider data (link to user)
+        await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(userId, "microsoft", providerUserId, email, name, avatar, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000).run();
+
         return Response.redirect(`${appUrl}/dashboard?auth=success`);
       } catch (error) {
         console.error("Microsoft OAuth error:", error);
