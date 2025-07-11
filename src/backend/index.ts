@@ -210,6 +210,8 @@ export default {
     // User settings routes
     if (pathname === "/me" && request.method === "GET") {
       try {
+        const cookie = request.headers.get('cookie');
+        console.log('[BACKEND] /me Cookie header:', cookie);
         const userId = getCurrentUserId(request);
         console.log('[BACKEND] /me Session User:', userId);
         if (!userId) {
@@ -686,8 +688,11 @@ export default {
         
         // Set session cookie and redirect
         const headers = new Headers();
-        headers.set('Set-Cookie', `session=${userId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400; Domain=.rhythm90.io`);
+        const sessionCookie = `session=${userId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400; Domain=.rhythm90.io`;
+        headers.set('Set-Cookie', sessionCookie);
         headers.set('Location', `${appUrl}/dashboard?auth=success`);
+        console.log('[BACKEND] OAuth callback setting session cookie:', sessionCookie);
+        console.log('[BACKEND] OAuth callback redirecting to:', `${appUrl}/dashboard?auth=success`);
         return new Response(null, { status: 302, headers });
       } catch (error) {
         console.error("Google OAuth callback error:", error);
