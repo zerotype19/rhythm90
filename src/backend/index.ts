@@ -579,7 +579,7 @@ export default {
     // Logout route
     if (pathname === "/auth/logout" && request.method === "POST") {
       const response = jsonResponse({ success: true });
-      response.headers.set('Set-Cookie', 'session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+      response.headers.set('Set-Cookie', `session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Domain=.rhythm90.io`);
       return response;
     }
 
@@ -673,7 +673,7 @@ export default {
         
         // Set session cookie and redirect
         const headers = new Headers();
-        headers.set('Set-Cookie', `session=${userId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
+        headers.set('Set-Cookie', `session=${userId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400; Domain=.rhythm90.io`);
         headers.set('Location', `${appUrl}/dashboard?auth=success`);
         return new Response(null, { status: 302, headers });
       } catch (error) {
@@ -4606,7 +4606,7 @@ export default {
     if (pathname === "/auth/logout" && request.method === "POST") {
       // Clear session cookie (and JWT if used in future)
       const headers = new Headers();
-      headers.set("Set-Cookie", "session=; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+      headers.set("Set-Cookie", "session=; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Domain=.rhythm90.io");
       headers.set("Location", "/");
       return new Response(null, { status: 302, headers });
     }
