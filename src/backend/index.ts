@@ -195,40 +195,50 @@ export default {
 
     // User settings routes
     if (pathname === "/me" && request.method === "GET") {
-      const userId = getCurrentUserId();
-      const user = await env.DB.prepare(`SELECT id, email, name, avatar, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
-      if (!user) {
-        return errorResponse("User not found", 404);
+      try {
+        const userId = getCurrentUserId();
+        const user = await env.DB.prepare(`SELECT id, email, name, avatar, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
+        if (!user) {
+          return errorResponse("User not found", 401);
+        }
+        // Get linked providers
+        const providers = await env.DB.prepare(`SELECT provider FROM oauth_providers WHERE user_id = ?`).bind(userId).all();
+        const providerList = providers.results.map((p: any) => p.provider);
+        // Optionally get last login time (if you have a field for it)
+        // const lastLogin = user.last_login || null;
+        return jsonResponse({
+          ...user,
+          providers: providerList,
+          // lastLogin
+        });
+      } catch (error) {
+        console.error("Error in /me endpoint:", error);
+        return errorResponse("Authentication required", 401);
       }
-      // Get linked providers
-      const providers = await env.DB.prepare(`SELECT provider FROM oauth_providers WHERE user_id = ?`).bind(userId).all();
-      const providerList = providers.results.map((p: any) => p.provider);
-      // Optionally get last login time (if you have a field for it)
-      // const lastLogin = user.last_login || null;
-      return jsonResponse({
-        ...user,
-        providers: providerList,
-        // lastLogin
-      });
     }
 
     if (pathname === "/me" && request.method === "POST") {
-      const userId = getCurrentUserId();
-      const body = await request.json() as { name: string };
-      
-      // Basic name validation
-      if (!body.name || body.name.length < 2 || body.name.length > 50) {
-        return Response.json({ success: false, message: "Name must be between 2 and 50 characters" }, { status: 400 });
+      try {
+        const userId = getCurrentUserId();
+        const body = await request.json() as { name: string };
+        
+        // Basic name validation
+        if (!body.name || body.name.length < 2 || body.name.length > 50) {
+          return errorResponse("Name must be between 2 and 50 characters", 400);
+        }
+        
+        // Check for special characters/emojis (basic check)
+        const nameRegex = /^[a-zA-Z0-9\s\-\.]+$/;
+        if (!nameRegex.test(body.name)) {
+          return errorResponse("Name contains invalid characters", 400);
+        }
+        
+        await env.DB.prepare(`UPDATE users SET name = ? WHERE id = ?`).bind(body.name, userId).run();
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error in /me POST endpoint:", error);
+        return errorResponse("Authentication required", 401);
       }
-      
-      // Check for special characters/emojis (basic check)
-      const nameRegex = /^[a-zA-Z0-9\s\-\.]+$/;
-      if (!nameRegex.test(body.name)) {
-        return Response.json({ success: false, message: "Name contains invalid characters" }, { status: 400 });
-      }
-      
-      await env.DB.prepare(`UPDATE users SET name = ? WHERE id = ?`).bind(body.name, userId).run();
-      return Response.json({ success: true });
     }
 
     // Password reset routes
