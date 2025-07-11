@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface User {
   id: string;
@@ -15,24 +15,7 @@ export function useAuth() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  // Check auth status when URL contains auth=success (after OAuth redirect)
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('auth') === 'success') {
-      console.log('[useAuth] OAuth success detected, checking auth status...');
-      checkAuthStatus();
-      // Clean up the URL
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.delete('auth');
-      window.history.replaceState({}, '', newUrl.toString());
-    }
-  }, []);
-
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = useCallback(async () => {
     try {
       const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
       const res = await fetch(`${baseUrl}/me`, { credentials: 'include' });
@@ -55,7 +38,24 @@ export function useAuth() {
       setLoading(false);
       console.log('[useAuth] isAuthenticated:', isAuthenticated, 'user:', user);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    checkAuthStatus();
+  }, [checkAuthStatus]);
+
+  // Check auth status when URL contains auth=success (after OAuth redirect)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('auth') === 'success') {
+      console.log('[useAuth] OAuth success detected, checking auth status...');
+      checkAuthStatus();
+      // Clean up the URL
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('auth');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+  }, [checkAuthStatus]);
 
   const loginGoogle = async () => {
     const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
