@@ -598,7 +598,7 @@ export default {
 
     // OAuth login redirects
     if (pathname === "/auth/login/google" && request.method === "GET") {
-      const redirectUri = `https://rhythm90-api.kevin-mcgovern.workers.dev/auth/callback/google`;
+      const redirectUri = `https://api.rhythm90.io/auth/callback/google`;
       const state = crypto.randomUUID();
       const scope = "openid email profile";
       
@@ -659,7 +659,7 @@ export default {
             client_secret: env.GOOGLE_CLIENT_SECRET!,
             code,
             grant_type: "authorization_code",
-            redirect_uri: `https://rhythm90-api.kevin-mcgovern.workers.dev/auth/callback/google`
+            redirect_uri: `https://api.rhythm90.io/auth/callback/google`
           })
         });
         const tokenData = await tokenResponse.json() as { access_token: string; refresh_token?: string; expires_in: number };
