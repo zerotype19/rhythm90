@@ -213,7 +213,7 @@ export default {
         if (!userId) {
           return errorResponse("Authentication required", 401);
         }
-        const user = await env.DB.prepare(`SELECT id, email, name, avatar, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
+        const user = await env.DB.prepare(`SELECT id, email, name, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
         if (!user) {
           return errorResponse("User not found", 401);
         }
@@ -662,11 +662,11 @@ export default {
         let userId: string;
         if (user) {
           userId = user.id;
-          // Optionally update name/avatar if changed
-          await env.DB.prepare(`UPDATE users SET name = ?, avatar = ? WHERE id = ?`).bind(userData.name, avatar, userId).run();
+          // Optionally update name if changed
+          await env.DB.prepare(`UPDATE users SET name = ? WHERE id = ?`).bind(userData.name, userId).run();
         } else {
           userId = crypto.randomUUID();
-          await env.DB.prepare(`INSERT INTO users (id, email, name, avatar, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(userId, userData.email, userData.name, avatar, "google", "member", false).run();
+          await env.DB.prepare(`INSERT INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`).bind(userId, userData.email, userData.name, "google", "member", false).run();
         }
         // Store OAuth provider data
         await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(userId, "google", userData.id, userData.email, userData.name, avatar, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000).run();
@@ -751,10 +751,10 @@ export default {
         let userId: string;
         if (user) {
           userId = user.id;
-          await env.DB.prepare(`UPDATE users SET name = ?, avatar = ? WHERE id = ?`).bind(name, avatar, userId).run();
+          await env.DB.prepare(`UPDATE users SET name = ? WHERE id = ?`).bind(name, userId).run();
         } else {
           userId = crypto.randomUUID();
-          await env.DB.prepare(`INSERT INTO users (id, email, name, avatar, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(userId, email, name, avatar, "microsoft", "member", false).run();
+          await env.DB.prepare(`INSERT INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`).bind(userId, email, name, "microsoft", "member", false).run();
         }
         // Store OAuth provider data (link to user)
         await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(userId, "microsoft", providerUserId, email, name, avatar, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000).run();
@@ -4617,7 +4617,7 @@ export default {
         return new Response("Unauthorized", { status: 401 });
       }
       // Get all users
-      const users = await env.DB.prepare(`SELECT id, email, name, avatar, role, is_premium, created_at FROM users`).all();
+      const users = await env.DB.prepare(`SELECT id, email, name, role, is_premium, created_at FROM users`).all();
       // For each user, get linked providers
       const usersWithProviders = await Promise.all(users.results.map(async (user: any) => {
         const providers = await env.DB.prepare(`SELECT provider FROM oauth_providers WHERE user_id = ?`).bind(user.id).all();
