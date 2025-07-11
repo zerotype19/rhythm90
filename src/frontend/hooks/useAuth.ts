@@ -22,21 +22,25 @@ export function useAuth() {
   const checkAuthStatus = async () => {
     try {
       const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
-      const res = await fetch(`${baseUrl}/me`);
+      const res = await fetch(`${baseUrl}/me`, { credentials: 'include' });
+      console.log('[useAuth] /me response:', res);
       if (res.ok) {
         const userData = await res.json();
         setUser(userData);
         setIsAuthenticated(true);
+        console.log('[useAuth] Authenticated user:', userData);
       } else {
         setUser(null);
         setIsAuthenticated(false);
+        console.log('[useAuth] Not authenticated (401 or error)');
       }
     } catch (error) {
-      console.error("Auth check failed:", error);
+      console.error('Auth check failed:', error);
       setUser(null);
       setIsAuthenticated(false);
     } finally {
       setLoading(false);
+      console.log('[useAuth] isAuthenticated:', isAuthenticated, 'user:', user);
     }
   };
 

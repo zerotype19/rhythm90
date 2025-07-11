@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { fetchDashboardStats } from "../utils/api";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import Loading from "../components/Loading";
@@ -15,12 +14,17 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const [statsData, userData] = await Promise.all([
-          fetchDashboardStats(),
-          fetch(`${import.meta.env.VITE_API_URL}/me`).then(res => res.json())
-        ]);
-        setStats(statsData);
+        // Remove fetchDashboardStats since endpoint does not exist
+        // const [statsData, userData] = await Promise.all([
+        //   fetchDashboardStats(),
+        //   fetch(`${import.meta.env.VITE_API_URL}/me`).then(res => res.json())
+        // ]);
+        // setStats(statsData);
+        // setUser(userData);
+        // Instead, just fetch user for now
+        const userData = await fetch(`${import.meta.env.VITE_API_URL}/me`).then(res => res.json());
         setUser(userData);
+        setStats({ playCount: 0, signalCount: 0 }); // Placeholder values
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
       } finally {
