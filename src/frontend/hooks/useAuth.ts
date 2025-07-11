@@ -19,6 +19,19 @@ export function useAuth() {
     checkAuthStatus();
   }, []);
 
+  // Check auth status when URL contains auth=success (after OAuth redirect)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('auth') === 'success') {
+      console.log('[useAuth] OAuth success detected, checking auth status...');
+      checkAuthStatus();
+      // Clean up the URL
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('auth');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+  }, []);
+
   const checkAuthStatus = async () => {
     try {
       const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
