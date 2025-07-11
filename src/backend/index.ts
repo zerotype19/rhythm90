@@ -211,25 +211,35 @@ export default {
       try {
         const userId = getCurrentUserId(request);
         if (!userId) {
-          return errorResponse("Authentication required", 401);
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { 'Content-Type': 'application/json' } });
         }
-        const user = await env.DB.prepare(`SELECT id, email, name, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
+        // Get user base info
+        const user = await env.DB.prepare(`SELECT id, email, name, role FROM users WHERE id = ?`).bind(userId).first();
         if (!user) {
-          return errorResponse("User not found", 401);
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { 'Content-Type': 'application/json' } });
         }
-        // Get linked providers
-        const providers = await env.DB.prepare(`SELECT provider FROM oauth_providers WHERE user_id = ?`).bind(userId).all();
-        const providerList = providers.results.map((p: any) => p.provider);
-        // Optionally get last login time (if you have a field for it)
-        // const lastLogin = user.last_login || null;
-        return jsonResponse({
-          ...user,
-          providers: providerList,
-          // lastLogin
-        });
+        // Get linked providers and avatars
+        const providersRes = await env.DB.prepare(`SELECT provider, avatar FROM oauth_providers WHERE user_id = ?`).bind(userId).all();
+        const providers = providersRes.results.map((p: any) => p.provider);
+        // Find first non-null avatar
+        let avatar = null;
+        for (const p of providersRes.results) {
+          if (p.avatar) {
+            avatar = p.avatar;
+            break;
+          }
+        }
+        return new Response(JSON.stringify({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          avatar,
+          role: user.role,
+          providers
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       } catch (error) {
         console.error("Error in /me endpoint:", error);
-        return errorResponse("Authentication required", 401);
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { 'Content-Type': 'application/json' } });
       }
     }
 
