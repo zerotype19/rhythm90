@@ -40,11 +40,13 @@ export function useAuth() {
   };
 
   const loginGoogle = async () => {
-    window.location.href = `${import.meta.env.VITE_API_URL}/auth/login/google`;
+    const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
+    window.location.href = `${baseUrl}/auth/login/google`;
   };
 
   const loginMicrosoft = () => {
-    window.location.href = `${import.meta.env.VITE_API_URL}/auth/login/microsoft`;
+    const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
+    window.location.href = `${baseUrl}/auth/login/microsoft`;
   };
 
   const logout = async () => {
