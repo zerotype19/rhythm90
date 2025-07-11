@@ -672,9 +672,10 @@ export default {
         await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(userId, "google", userData.id, userData.email, userData.name, avatar, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000).run();
         
         // Set session cookie and redirect
-        const response = Response.redirect(`${appUrl}/dashboard?auth=success`);
-        response.headers.set('Set-Cookie', `session=${userId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
-        return response;
+        const headers = new Headers();
+        headers.set('Set-Cookie', `session=${userId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
+        headers.set('Location', `${appUrl}/dashboard?auth=success`);
+        return new Response(null, { status: 302, headers });
       } catch (error) {
         console.error("Google OAuth callback error:", error);
         if (env.SENTRY_DSN) {
@@ -4604,9 +4605,10 @@ export default {
     // Logout endpoint
     if (pathname === "/auth/logout" && request.method === "POST") {
       // Clear session cookie (and JWT if used in future)
-      const response = Response.redirect("/");
-      response.headers.set("Set-Cookie", "session=; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
-      return response;
+      const headers = new Headers();
+      headers.set("Set-Cookie", "session=; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+      headers.set("Location", "/");
+      return new Response(null, { status: 302, headers });
     }
 
     // Admin: List all users with linked providers
