@@ -215,13 +215,13 @@ export default {
         const userId = getCurrentUserId(request);
         console.log('[BACKEND] /me Session User:', userId);
         if (!userId) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+          return jsonResponse({ error: "Unauthorized" }, 401);
         }
         // Get user base info
         const user = await env.DB.prepare(`SELECT id, email, name, role FROM users WHERE id = ?`).bind(userId).first();
         console.log('[BACKEND] /me DB User:', user);
         if (!user) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+          return jsonResponse({ error: "Unauthorized" }, 401);
         }
         // Get linked providers and avatars
         const providersRes = await env.DB.prepare(`SELECT provider, avatar FROM oauth_providers WHERE user_id = ?`).bind(userId).all();
@@ -234,17 +234,17 @@ export default {
             break;
           }
         }
-        return new Response(JSON.stringify({
+        return jsonResponse({
           id: user.id,
           email: user.email,
           name: user.name,
           avatar,
           role: user.role,
           providers
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        });
       } catch (error) {
         console.error("Error in /me endpoint:", error);
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+        return jsonResponse({ error: "Unauthorized" }, 401);
       }
     }
 
