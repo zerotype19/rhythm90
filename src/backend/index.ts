@@ -211,11 +211,13 @@ export default {
     if (pathname === "/me" && request.method === "GET") {
       try {
         const userId = getCurrentUserId(request);
+        console.log('[BACKEND] /me Session User:', userId);
         if (!userId) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { 'Content-Type': 'application/json' } });
         }
         // Get user base info
         const user = await env.DB.prepare(`SELECT id, email, name, role FROM users WHERE id = ?`).bind(userId).first();
+        console.log('[BACKEND] /me DB User:', user);
         if (!user) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { 'Content-Type': 'application/json' } });
         }

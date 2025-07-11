@@ -15,6 +15,7 @@ export default function Navbar() {
   const { isAdmin, loading: adminLoading } = useAdmin();
   const { isDemoMode } = useDemo();
   const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
+  console.log('[NAVBAR] Auth State:', isAuthenticated, user);
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);

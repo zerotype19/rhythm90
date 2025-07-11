@@ -29,7 +29,8 @@ export async function fetchBoard(): Promise<{ results: Play[] }> {
   return res.json();
 }
 
-export async function createPlay(play: Omit<Play, "id" | "created_at">) {
+export async function createPlay(play: Omit<Play, "id" | "created_at"> & { userId: string }) {
+  console.log('[API] createPlay userId:', play.userId);
   const res = await fetch(`${getApiBaseUrl()}/board`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,7 +46,8 @@ export async function fetchSignals(): Promise<{ results: Signal[] }> {
   return res.json();
 }
 
-export async function createSignal(signal: Omit<Signal, "id" | "created_at">) {
+export async function createSignal(signal: Omit<Signal, "id" | "created_at"> & { userId: string }) {
+  console.log('[API] createSignal userId:', signal.userId);
   const res = await fetch(`${getApiBaseUrl()}/signals`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
