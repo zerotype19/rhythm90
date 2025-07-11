@@ -49,16 +49,8 @@ export function useAuth() {
     return data;
   };
 
-  const loginMicrosoft = async () => {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/microsoft`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "test@microsoft.com", name: "Test User" }),
-    });
-    if (!res.ok) throw new Error("Microsoft login failed");
-    const data = await res.json();
-    await checkAuthStatus(); // Refresh auth status after login
-    return data;
+  const loginMicrosoft = () => {
+    window.location.href = `${import.meta.env.VITE_API_URL}/auth/login/microsoft`;
   };
 
   const logout = async () => {
