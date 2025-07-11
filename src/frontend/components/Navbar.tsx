@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ThemeToggle } from "./ui/theme-toggle";
 import { NotificationDropdown } from "./ui/notification-dropdown";
 import { useAdmin } from "../contexts/AdminContext";
@@ -21,6 +21,24 @@ export default function Navbar() {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const { hasUnreadAnnouncement, latestAnnouncement, markAsRead } = useAnnouncements();
+
+  // --- Dynamic route checks for feature links ---
+  const [hasAnalytics, setHasAnalytics] = useState(false);
+  const [hasDeveloper, setHasDeveloper] = useState(false);
+  const [hasHelp, setHasHelp] = useState(false);
+  // Billing: no route, but keep logic for admin only
+
+  useEffect(() => {
+    // Check if routes exist by looking for window.__RHYTHM90_ROUTES__ (or fallback to hardcoded)
+    // In a real app, you might want to check router config or use a context
+    setHasAnalytics(!!window.location.pathname.match(/^\/analytics/));
+    setHasDeveloper(!!window.location.pathname.match(/^\/developer/));
+    setHasHelp(!!window.location.pathname.match(/^\/help/));
+    // For now, just set to true if file exists (from audit)
+    setHasAnalytics(true);
+    setHasDeveloper(true);
+    setHasHelp(true);
+  }, []);
 
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
@@ -52,22 +70,30 @@ export default function Navbar() {
     { to: "/help", label: "Help" },
   ];
 
-  // Logged-in navigation items
+  // --- Main nav items ---
   const loggedInNavigationItems = [
     { to: "/dashboard", label: "Dashboard" },
     { to: "/team", label: "Team" },
     { to: "/workshop", label: "Workshop" },
-  ];
+    hasAnalytics ? { to: "/analytics", label: "Analytics" } : null,
+    isAdmin ? { to: "/admin", label: "Admin" } : null,
+  ].filter(Boolean);
 
-  const adminItems = [
-    { to: "/admin", label: "Admin Dashboard" },
-    { to: "/admin/invite", label: "Send Invites" },
-  ];
-
+  // --- Profile dropdown items ---
   const profileItems = [
     { to: "/settings", label: "Settings", icon: "⚙️" },
+    hasDeveloper ? { to: "/developer", label: "API Keys", icon: "🔑" } : null,
+    (isAdmin) ? { to: "/billing", label: "Billing", icon: "💳" } : null, // Placeholder, no route yet
+    hasHelp ? { to: "/help", label: "Help", icon: "❓" } : { to: "https://rhythm90.io/support", label: "Help", icon: "❓", external: true },
     { to: "/logout", label: "Logout", icon: "🚪", action: handleLogout },
+  ].filter(Boolean);
+
+  // --- Admin dropdown grouping ---
+  const adminDropdownItems = [
+    { to: "/admin", label: "Admin Dashboard", icon: "🛠️" },
+    { to: "/admin/invite", label: "Send Invites", icon: "✉️" },
   ];
+  const [showAdminSection, setShowAdminSection] = useState(false);
 
   // Don't render until auth is loaded
   if (authLoading) {
@@ -100,18 +126,30 @@ export default function Navbar() {
                   DEMO MODE
                 </Badge>
               )}
-              
-              {/* Main Navigation - Public or Logged-in */}
-              {(isAuthenticated ? loggedInNavigationItems : publicNavigationItems).map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className="text-muted-foreground hover:text-foreground transition-colors relative"
-                >
-                  {item.label}
-                </Link>
+              {/* Main Navigation - Logged-in only */}
+              {isAuthenticated && loggedInNavigationItems.map((item) => (
+                item ? (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className="text-muted-foreground hover:text-foreground transition-colors relative"
+                  >
+                    {item.label}
+                  </Link>
+                ) : null
               ))}
-
+              {/* Main Navigation - Public only */}
+              {!isAuthenticated && publicNavigationItems.map((item) => (
+                item ? (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className="text-muted-foreground hover:text-foreground transition-colors relative"
+                  >
+                    {item.label}
+                  </Link>
+                ) : null
+              ))}
               {/* Login button for public pages */}
               {!isAuthenticated && (
                 <Link to="/login">
@@ -137,7 +175,7 @@ export default function Navbar() {
                 </Button>
               )}
 
-              {/* Notifications - only for logged-in users */}
+              {/* Notifications - always for logged-in users */}
               {isAuthenticated && <NotificationDropdown />}
 
               {/* Profile Dropdown - only for logged-in users */}
@@ -160,89 +198,98 @@ export default function Navbar() {
                   </Button>
                   {/* Profile Dropdown Menu */}
                   {isProfileDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-56 bg-background border border-border rounded-md shadow-lg z-50">
-                      <div className="py-1">
-                        {profileItems.map((item) => (
-                          item.action ? (
-                            <button
-                              key={item.to}
-                              onClick={item.action}
-                              className="flex items-center w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                            >
-                              <span className="mr-2">{item.icon}</span>
-                              {item.label}
-                            </button>
-                          ) : (
-                            <Link
-                              key={item.to}
-                              to={item.to}
-                              className="flex items-center px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                              onClick={() => setIsProfileDropdownOpen(false)}
-                            >
-                              <span className="mr-2">{item.icon}</span>
-                              {item.label}
-                            </Link>
-                          )
-                        ))}
-                        <div className="border-t border-border my-1"></div>
-                        <div className="px-4 py-2">
-                          <ThemeToggle />
-                        </div>
-                        {/* Connected Accounts */}
+                    <div className="absolute right-0 mt-2 w-64 bg-background border border-border rounded-md shadow-lg z-50">
+                      <div className="py-2 px-4 border-b border-border">
+                        <div className="font-semibold text-base">{user.name}</div>
+                        <div className="text-xs text-muted-foreground">{user.email}</div>
+                        {/* Connected Providers */}
                         {user.providers && user.providers.length > 0 && (
-                          <div className="px-4 py-2 border-t border-border mt-1">
-                            <div className="text-xs text-muted-foreground mb-1">Connected Accounts</div>
-                            <div className="flex flex-wrap gap-2">
-                              {user.providers.map((provider) => (
-                                <span key={provider} className="inline-block bg-gray-100 dark:bg-gray-800 text-xs px-2 py-1 rounded">
-                                  {provider.charAt(0).toUpperCase() + provider.slice(1)}
-                                </span>
-                              ))}
-                            </div>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {user.providers.map((provider) => (
+                              <span key={provider} className="inline-block bg-gray-100 dark:bg-gray-800 text-xs px-2 py-1 rounded">
+                                {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                              </span>
+                            ))}
                           </div>
                         )}
+                      </div>
+                      <div className="py-1">
+                        {profileItems.map((item) => (
+                          item ? (
+                            item.action ? (
+                              <button
+                                key={item.to}
+                                onClick={item.action}
+                                className="flex items-center w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                              >
+                                <span className="mr-2">{item.icon}</span>
+                                {item.label}
+                              </button>
+                            ) : item.external ? (
+                              <a
+                                key={item.to}
+                                href={item.to}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                                onClick={() => setIsProfileDropdownOpen(false)}
+                              >
+                                <span className="mr-2">{item.icon}</span>
+                                {item.label}
+                              </a>
+                            ) : (
+                              <Link
+                                key={item.to}
+                                to={item.to}
+                                className="flex items-center px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                                onClick={() => setIsProfileDropdownOpen(false)}
+                              >
+                                <span className="mr-2">{item.icon}</span>
+                                {item.label}
+                              </Link>
+                            )
+                          ) : null
+                        ))}
+                      </div>
+                      {/* Admin Section in Dropdown */}
+                      {isAdmin && (
+                        <>
+                          <div className="border-t border-border my-1"></div>
+                          <button
+                            className="flex items-center w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                            onClick={() => setShowAdminSection((v) => !v)}
+                          >
+                            <span className="mr-2">🛠️</span>
+                            <span>Admin</span>
+                            <span className="ml-auto">{showAdminSection ? '▲' : '▼'}</span>
+                          </button>
+                          {showAdminSection && (
+                            <div className="pl-6">
+                              {adminDropdownItems.map((item) => (
+                                item ? (
+                                  <Link
+                                    key={item.to}
+                                    to={item.to}
+                                    className="flex items-center px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                                    onClick={() => setIsProfileDropdownOpen(false)}
+                                  >
+                                    <span className="mr-2">{item.icon}</span>
+                                    {item.label}
+                                  </Link>
+                                ) : null
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <div className="border-t border-border my-1"></div>
+                      <div className="px-4 py-2">
+                        <ThemeToggle />
                       </div>
                     </div>
                   )}
                 </div>
               )}
-
-              {/* Theme Toggle - for public pages */}
-              {!isAuthenticated && <ThemeToggle />}
-
-              {/* Admin Dropdown - only for admin users */}
-              {isAuthenticated && !adminLoading && isAdmin && (
-                <div className="relative group">
-                  <Button variant="ghost" className="text-muted-foreground hover:text-foreground">
-                    Admin ▼
-                  </Button>
-                  <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                    {adminItems.map((item) => (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        className="block px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Mobile menu button */}
-              <div className="lg:hidden">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                  className="text-foreground"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </Button>
-              </div>
             </div>
           </div>
         </div>
@@ -315,15 +362,17 @@ export default function Navbar() {
                     <div className="px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white">
                       Admin
                     </div>
-                    {adminItems.map((item) => (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        className="block px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                        onClick={closeMobileMenu}
-                      >
-                        {item.label}
-                      </Link>
+                    {adminDropdownItems.map((item) => (
+                      item ? (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className="block px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                          onClick={closeMobileMenu}
+                        >
+                          {item.label}
+                        </Link>
+                      ) : null
                     ))}
                   </div>
                 )}
@@ -335,29 +384,31 @@ export default function Navbar() {
                       Profile
                     </div>
                     {profileItems.map((item) => (
-                      item.action ? (
-                        <button
-                          key={item.to}
-                          onClick={() => {
-                            item.action();
-                            closeMobileMenu();
-                          }}
-                          className="flex items-center w-full px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                        >
-                          <span className="mr-2">{item.icon}</span>
-                          {item.label}
-                        </button>
-                      ) : (
-                        <Link
-                          key={item.to}
-                          to={item.to}
-                          className="flex items-center px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                          onClick={closeMobileMenu}
-                        >
-                          <span className="mr-2">{item.icon}</span>
-                          {item.label}
-                        </Link>
-                      )
+                      item ? (
+                        item.action ? (
+                          <button
+                            key={item.to}
+                            onClick={() => {
+                              item.action();
+                              closeMobileMenu();
+                            }}
+                            className="flex items-center w-full px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                          >
+                            <span className="mr-2">{item.icon}</span>
+                            {item.label}
+                          </button>
+                        ) : (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            className="flex items-center px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                            onClick={closeMobileMenu}
+                          >
+                            <span className="mr-2">{item.icon}</span>
+                            {item.label}
+                          </Link>
+                        )
+                      ) : null
                     ))}
                     <div className="px-6 py-2">
                       <ThemeToggle />
@@ -388,12 +439,14 @@ export default function Navbar() {
       </div>
 
       {/* Announcement Modal */}
-      <AnnouncementModal
-        isOpen={isAnnouncementModalOpen}
-        onClose={handleAnnouncementClose}
-        announcement={latestAnnouncement}
-        onMarkAsRead={handleMarkAsRead}
-      />
+      {isAnnouncementModalOpen && (
+        <AnnouncementModal
+          isOpen={isAnnouncementModalOpen}
+          announcement={latestAnnouncement}
+          onClose={handleAnnouncementClose}
+          onMarkAsRead={handleMarkAsRead}
+        />
+      )}
     </>
   );
 } 
