@@ -538,7 +538,7 @@ export default {
 
     // OAuth login redirects
     if (pathname === "/auth/login/google" && request.method === "GET") {
-      const redirectUri = `${appUrl}/auth/callback/google`;
+      const redirectUri = `https://rhythm90-api.kevin-mcgovern.workers.dev/auth/callback/google`;
       const state = crypto.randomUUID();
       const scope = "openid email profile";
       
@@ -548,7 +548,7 @@ export default {
     }
 
     if (pathname === "/auth/login/microsoft" && request.method === "GET") {
-      const redirectUri = env.MICROSOFT_REDIRECT_URI || `${appUrl}/auth/callback/microsoft`;
+      const redirectUri = env.MICROSOFT_REDIRECT_URI || `https://rhythm90-api.kevin-mcgovern.workers.dev/auth/callback/microsoft`;
       const state = crypto.randomUUID();
       const scope = [
         "https://graph.microsoft.com/User.Read",
@@ -588,7 +588,7 @@ export default {
             client_secret: env.GOOGLE_CLIENT_SECRET!,
             code,
             grant_type: "authorization_code",
-            redirect_uri: `${appUrl}/auth/callback/google`
+            redirect_uri: `https://rhythm90-api.kevin-mcgovern.workers.dev/auth/callback/google`
           })
         });
         const tokenData = await tokenResponse.json() as { access_token: string; refresh_token?: string; expires_in: number };
@@ -632,7 +632,7 @@ export default {
     if (pathname === "/auth/callback/microsoft" && request.method === "GET") {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
-      const redirectUri = env.MICROSOFT_REDIRECT_URI || `${appUrl}/auth/callback/microsoft`;
+      const redirectUri = env.MICROSOFT_REDIRECT_URI || `https://rhythm90-api.kevin-mcgovern.workers.dev/auth/callback/microsoft`;
       if (!code) {
         return Response.redirect(`${appUrl}/login?error=no_code`);
       }

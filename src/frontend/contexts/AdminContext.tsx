@@ -15,7 +15,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
   const checkAdminStatus = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/check`);
+      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
+      const res = await fetch(`${baseUrl}/admin/check`);
       if (res.ok) {
         const data = await res.json();
         setIsAdmin(data.isAdmin);

@@ -16,7 +16,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function checkDemoMode() {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/demo/check`);
+        const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
+        const res = await fetch(`${baseUrl}/demo/check`);
         if (res.ok) {
           const data = await res.json();
           setIsDemoMode(data.isDemoMode);
@@ -32,7 +33,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   const loginAsDemo = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/demo`, {
+      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
+      const res = await fetch(`${baseUrl}/auth/demo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });

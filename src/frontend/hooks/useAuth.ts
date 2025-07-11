@@ -21,7 +21,8 @@ export function useAuth() {
 
   const checkAuthStatus = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/me`);
+      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
+      const res = await fetch(`${baseUrl}/me`);
       if (res.ok) {
         const userData = await res.json();
         setUser(userData);
@@ -51,7 +52,8 @@ export function useAuth() {
 
   const logout = async () => {
     try {
-      await fetch(`${import.meta.env.VITE_API_URL}/auth/logout`, {
+      const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, ''); // Remove trailing slash
+      await fetch(`${baseUrl}/auth/logout`, {
         method: "POST",
         credentials: "include"
       });
