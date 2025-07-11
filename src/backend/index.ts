@@ -623,8 +623,19 @@ export default {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       if (!code) {
+        console.error("Google OAuth callback: No code provided");
         return Response.redirect(`${appUrl}/login?error=no_code`);
       }
+      
+      // Check if environment variables are set
+      if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+        console.error("Google OAuth callback: Missing environment variables", {
+          hasClientId: !!env.GOOGLE_CLIENT_ID,
+          hasClientSecret: !!env.GOOGLE_CLIENT_SECRET
+        });
+        return Response.redirect(`${appUrl}/login?error=oauth_config_missing`);
+      }
+      
       try {
         // Exchange code for tokens
         const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -665,6 +676,7 @@ export default {
         response.headers.set('Set-Cookie', `session=${userId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
         return response;
       } catch (error) {
+        console.error("Google OAuth callback error:", error);
         if (env.SENTRY_DSN) {
           fetch(env.SENTRY_DSN, {
             method: "POST",
