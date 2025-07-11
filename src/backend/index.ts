@@ -28,8 +28,21 @@ async function isAdmin(env: Env, userId: string): Promise<boolean> {
 }
 
 // Helper function to get current user ID (for now, hardcoded - will be replaced with auth)
-function getCurrentUserId(): string {
-  return "admin-demo-123"; // Demo admin for now
+function getCurrentUserId(request: Request): string | null {
+  // Get user ID from session cookie
+  const cookie = request.headers.get('cookie');
+  if (!cookie) return null;
+  
+  const sessionMatch = cookie.match(/session=([^;]+)/);
+  if (!sessionMatch) return null;
+  
+  try {
+    // For now, just return the session value as user ID
+    // In a real implementation, you'd decode/verify the session
+    return sessionMatch[1];
+  } catch (error) {
+    return null;
+  }
 }
 
 // Helper function to check if demo mode is enabled
@@ -196,7 +209,10 @@ export default {
     // User settings routes
     if (pathname === "/me" && request.method === "GET") {
       try {
-        const userId = getCurrentUserId();
+        const userId = getCurrentUserId(request);
+        if (!userId) {
+          return errorResponse("Authentication required", 401);
+        }
         const user = await env.DB.prepare(`SELECT id, email, name, avatar, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
         if (!user) {
           return errorResponse("User not found", 401);
@@ -552,9 +568,19 @@ export default {
 
     // Admin check route
     if (pathname === "/admin/check" && request.method === "GET") {
-      const userId = getCurrentUserId();
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ isAdmin: false });
+      }
       const adminStatus = await isAdmin(env, userId);
       return jsonResponse({ isAdmin: adminStatus });
+    }
+
+    // Logout route
+    if (pathname === "/auth/logout" && request.method === "POST") {
+      const response = jsonResponse({ success: true });
+      response.headers.set('Set-Cookie', 'session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+      return response;
     }
 
     // OAuth login redirects
@@ -633,7 +659,11 @@ export default {
         }
         // Store OAuth provider data
         await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(userId, "google", userData.id, userData.email, userData.name, avatar, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000).run();
-        return Response.redirect(`${appUrl}/dashboard?auth=success`);
+        
+        // Set session cookie and redirect
+        const response = Response.redirect(`${appUrl}/dashboard?auth=success`);
+        response.headers.set('Set-Cookie', `session=${userId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
+        return response;
       } catch (error) {
         if (env.SENTRY_DSN) {
           fetch(env.SENTRY_DSN, {
