@@ -137,6 +137,17 @@ function addCorsHeaders(response: Response): Response {
   return response;
 }
 
+function jsonResponse(data: any, status: number = 200): Response {
+  return addCorsHeaders(new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  }));
+}
+
+function errorResponse(message: string, status: number = 400): Response {
+  return jsonResponse({ success: false, message }, status);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -154,7 +165,7 @@ export default {
 
     // Demo mode check route
     if (pathname === "/demo/check" && request.method === "GET") {
-      return Response.json({ isDemoMode: isDemoMode(env) });
+      return jsonResponse({ isDemoMode: isDemoMode(env) });
     }
 
     // Demo login route
@@ -179,7 +190,7 @@ export default {
       // Create demo data if it doesn't exist
       await createDemoData(env);
       
-      return Response.json({ success: true, user: demoUser, demo: true });
+      return jsonResponse({ success: true, user: demoUser, demo: true });
     }
 
     // User settings routes
@@ -187,14 +198,14 @@ export default {
       const userId = getCurrentUserId();
       const user = await env.DB.prepare(`SELECT id, email, name, avatar, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
       if (!user) {
-        return new Response("User not found", { status: 404 });
+        return errorResponse("User not found", 404);
       }
       // Get linked providers
       const providers = await env.DB.prepare(`SELECT provider FROM oauth_providers WHERE user_id = ?`).bind(userId).all();
       const providerList = providers.results.map((p: any) => p.provider);
       // Optionally get last login time (if you have a field for it)
       // const lastLogin = user.last_login || null;
-      return Response.json({
+      return jsonResponse({
         ...user,
         providers: providerList,
         // lastLogin
@@ -533,7 +544,7 @@ export default {
     if (pathname === "/admin/check" && request.method === "GET") {
       const userId = getCurrentUserId();
       const adminStatus = await isAdmin(env, userId);
-      return Response.json({ isAdmin: adminStatus });
+      return jsonResponse({ isAdmin: adminStatus });
     }
 
     // OAuth login redirects
