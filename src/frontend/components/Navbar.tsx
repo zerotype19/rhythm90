@@ -148,15 +148,18 @@ export default function Navbar() {
                     onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
                     className="flex items-center space-x-2"
                   >
-                    <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground text-sm font-medium">
-                      {user.name.charAt(0).toUpperCase()}
-                    </div>
+                    {user.avatar ? (
+                      <img src={user.avatar} alt="avatar" className="w-8 h-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground text-sm font-medium">
+                        {user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0,2)}
+                      </div>
+                    )}
                     <span className="hidden md:block text-sm">{user.name}</span>
                   </Button>
-                  
                   {/* Profile Dropdown Menu */}
                   {isProfileDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-48 bg-background border border-border rounded-md shadow-lg z-50">
+                    <div className="absolute right-0 mt-2 w-56 bg-background border border-border rounded-md shadow-lg z-50">
                       <div className="py-1">
                         {profileItems.map((item) => (
                           item.action ? (
@@ -184,6 +187,19 @@ export default function Navbar() {
                         <div className="px-4 py-2">
                           <ThemeToggle />
                         </div>
+                        {/* Connected Accounts */}
+                        {user.providers && user.providers.length > 0 && (
+                          <div className="px-4 py-2 border-t border-border mt-1">
+                            <div className="text-xs text-muted-foreground mb-1">Connected Accounts</div>
+                            <div className="flex flex-wrap gap-2">
+                              {user.providers.map((provider) => (
+                                <span key={provider} className="inline-block bg-gray-100 dark:bg-gray-800 text-xs px-2 py-1 rounded">
+                                  {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

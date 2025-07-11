@@ -4,8 +4,10 @@ interface User {
   id: string;
   email: string;
   name: string;
+  avatar?: string | null;
   role: string;
   is_premium?: boolean;
+  providers?: string[];
 }
 
 export function useAuth() {
@@ -38,15 +40,7 @@ export function useAuth() {
   };
 
   const loginGoogle = async () => {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/google`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "test@google.com", name: "Test User" }),
-    });
-    if (!res.ok) throw new Error("Google login failed");
-    const data = await res.json();
-    await checkAuthStatus(); // Refresh auth status after login
-    return data;
+    window.location.href = `${import.meta.env.VITE_API_URL}/auth/login/google`;
   };
 
   const loginMicrosoft = () => {
@@ -57,6 +51,7 @@ export function useAuth() {
     try {
       await fetch(`${import.meta.env.VITE_API_URL}/auth/logout`, {
         method: "POST",
+        credentials: "include"
       });
     } catch (error) {
       console.error("Logout failed:", error);

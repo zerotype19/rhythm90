@@ -29,6 +29,8 @@ export default function Admin() {
     active: true
   });
   const [showPreview, setShowPreview] = useState(false);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
 
   const adminSidebarItems = [
     { to: "/admin", label: "Overview", icon: "📊" },
@@ -40,6 +42,14 @@ export default function Admin() {
 
   useEffect(() => {
     load();
+    // Fetch all users for admin
+    fetch(`${import.meta.env.VITE_API_URL}/admin/users`, { credentials: "include" })
+      .then(res => res.json())
+      .then(data => {
+        setAllUsers(data.users || []);
+      })
+      .catch(e => setAllUsers([]))
+      .finally(() => setUsersLoading(false));
   }, []);
 
   useEffect(() => {
@@ -248,38 +258,60 @@ export default function Admin() {
           </div>
 
           {/* Teams Management Section */}
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-foreground">Team Management</h2>
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-card border border-border rounded-lg">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Team</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Members</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {adminData?.teams.map((team: any) => (
-                    <tr key={team.id} className="hover:bg-muted/50">
-                      <td className="px-4 py-3 text-sm text-foreground">{team.name}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{team.member_count}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant={team.status === 'active' ? 'default' : 'secondary'}>
-                          {team.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        <Button size="sm" variant="outline">
-                          View Details
-                        </Button>
-                      </td>
+          {/* User/Provider Listing Section */}
+          <div className="mt-8">
+            <h2 className="text-xl font-semibold mb-4">All Users & Linked Providers</h2>
+            {usersLoading ? (
+              <div>Loading users...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full border text-sm">
+                  <thead>
+                    <tr className="bg-muted">
+                      <th className="px-3 py-2 border">Name</th>
+                      <th className="px-3 py-2 border">Email</th>
+                      <th className="px-3 py-2 border">Role</th>
+                      <th className="px-3 py-2 border">Premium</th>
+                      <th className="px-3 py-2 border">Created</th>
+                      <th className="px-3 py-2 border">Providers</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {allUsers.map((user) => (
+                      <tr key={user.id}>
+                        <td className="px-3 py-2 border flex items-center gap-2">
+                          {user.avatar ? (
+                            <img src={user.avatar} alt="avatar" className="w-6 h-6 rounded-full object-cover" />
+                          ) : (
+                            <span className="inline-block w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
+                              {user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0,2)}
+                            </span>
+                          )}
+                          {user.name}
+                        </td>
+                        <td className="px-3 py-2 border">{user.email}</td>
+                        <td className="px-3 py-2 border">{user.role}</td>
+                        <td className="px-3 py-2 border text-center">{user.is_premium ? '✔️' : ''}</td>
+                        <td className="px-3 py-2 border">{user.created_at ? new Date(user.created_at).toLocaleDateString() : ''}</td>
+                        <td className="px-3 py-2 border">
+                          {user.providers && user.providers.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {user.providers.map((provider: string) => (
+                                <span key={provider} className="inline-block bg-gray-100 dark:bg-gray-800 text-xs px-2 py-1 rounded">
+                                  {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">None</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Feature Flags Section */}

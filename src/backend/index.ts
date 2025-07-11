@@ -18,6 +18,7 @@ export interface Env {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   MICROSOFT_REDIRECT_URI?: string;
+  SENTRY_DSN?: string;
 }
 
 // Helper function to check if user is admin
@@ -184,13 +185,20 @@ export default {
     // User settings routes
     if (pathname === "/me" && request.method === "GET") {
       const userId = getCurrentUserId();
-      const user = await env.DB.prepare(`SELECT id, email, name, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
-      
+      const user = await env.DB.prepare(`SELECT id, email, name, avatar, provider, role, is_premium FROM users WHERE id = ?`).bind(userId).first();
       if (!user) {
         return new Response("User not found", { status: 404 });
       }
-      
-      return Response.json(user);
+      // Get linked providers
+      const providers = await env.DB.prepare(`SELECT provider FROM oauth_providers WHERE user_id = ?`).bind(userId).all();
+      const providerList = providers.results.map((p: any) => p.provider);
+      // Optionally get last login time (if you have a field for it)
+      // const lastLogin = user.last_login || null;
+      return Response.json({
+        ...user,
+        providers: providerList,
+        // lastLogin
+      });
     }
 
     if (pathname === "/me" && request.method === "POST") {
@@ -567,11 +575,9 @@ export default {
     if (pathname === "/auth/callback/google" && request.method === "GET") {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
-      
       if (!code) {
         return Response.redirect(`${appUrl}/login?error=no_code`);
       }
-
       try {
         // Exchange code for tokens
         const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -585,30 +591,40 @@ export default {
             redirect_uri: `${appUrl}/auth/callback/google`
           })
         });
-
         const tokenData = await tokenResponse.json() as { access_token: string; refresh_token?: string; expires_in: number };
-        
         // Get user info
         const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
           headers: { "Authorization": `Bearer ${tokenData.access_token}` }
         });
-        
-        const userData = await userResponse.json() as { id: string; email: string; name: string; picture: string };
-        
-        // Create or update user
-        const userId = crypto.randomUUID();
-        await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`)
-          .bind(userId, userData.email, userData.name, "google", "member", false)
-          .run();
-        
+        const userData = await userResponse.json() as { id: string; email: string; name: string; picture?: string };
+        // Use avatar if available
+        const avatar = userData.picture || null;
+        // Check if user already exists by email
+        let user = await env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(userData.email).first();
+        let userId: string;
+        if (user) {
+          userId = user.id;
+          // Optionally update name/avatar if changed
+          await env.DB.prepare(`UPDATE users SET name = ?, avatar = ? WHERE id = ?`).bind(userData.name, avatar, userId).run();
+        } else {
+          userId = crypto.randomUUID();
+          await env.DB.prepare(`INSERT INTO users (id, email, name, avatar, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(userId, userData.email, userData.name, avatar, "google", "member", false).run();
+        }
         // Store OAuth provider data
-        await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .bind(userId, "google", userData.id, userData.email, userData.name, userData.picture, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000)
-          .run();
-        
+        await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(userId, "google", userData.id, userData.email, userData.name, avatar, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000).run();
         return Response.redirect(`${appUrl}/dashboard?auth=success`);
       } catch (error) {
-        console.error("Google OAuth error:", error);
+        if (env.SENTRY_DSN) {
+          fetch(env.SENTRY_DSN, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: "Google OAuth error",
+              error: error instanceof Error ? error.message : String(error),
+              context: { callback: "google" }
+            })
+          });
+        }
         return Response.redirect(`${appUrl}/login?error=oauth_failed`);
       }
     }
@@ -617,11 +633,9 @@ export default {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const redirectUri = env.MICROSOFT_REDIRECT_URI || `${appUrl}/auth/callback/microsoft`;
-
       if (!code) {
         return Response.redirect(`${appUrl}/login?error=no_code`);
       }
-
       try {
         // Exchange code for tokens
         const tokenResponse = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
@@ -641,15 +655,12 @@ export default {
             ].join(" ")
           })
         });
-
         const tokenData = await tokenResponse.json() as { access_token: string; refresh_token?: string; expires_in: number };
-
         // Get user info from Microsoft Graph
         const userResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
           headers: { "Authorization": `Bearer ${tokenData.access_token}` }
         });
         const userData = await userResponse.json() as { id: string; userPrincipalName: string; displayName: string; mail?: string };
-
         // Try to get avatar (optional)
         let avatar: string | null = null;
         try {
@@ -658,7 +669,6 @@ export default {
           });
           if (photoResponse.ok) {
             const photoArrayBuffer = await photoResponse.arrayBuffer();
-            // Convert ArrayBuffer to base64 string (Cloudflare Workers compatible)
             let binary = '';
             const bytes = new Uint8Array(photoArrayBuffer);
             for (let i = 0; i < bytes.byteLength; i++) {
@@ -669,30 +679,35 @@ export default {
         } catch (e) {
           avatar = null;
         }
-
         // Use email from mail or userPrincipalName
         const email = userData.mail || userData.userPrincipalName;
         const name = userData.displayName;
         const providerUserId = userData.id;
-
         // Check if user already exists by email
         let user = await env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first();
         let userId: string;
         if (user) {
           userId = user.id;
-          // Optionally update name if changed
-          await env.DB.prepare(`UPDATE users SET name = ? WHERE id = ?`).bind(name, userId).run();
+          await env.DB.prepare(`UPDATE users SET name = ?, avatar = ? WHERE id = ?`).bind(name, avatar, userId).run();
         } else {
           userId = crypto.randomUUID();
-          await env.DB.prepare(`INSERT INTO users (id, email, name, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?)`).bind(userId, email, name, "microsoft", "member", false).run();
+          await env.DB.prepare(`INSERT INTO users (id, email, name, avatar, provider, role, is_premium) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(userId, email, name, avatar, "microsoft", "member", false).run();
         }
-
         // Store OAuth provider data (link to user)
         await env.DB.prepare(`INSERT OR REPLACE INTO oauth_providers (user_id, provider, provider_user_id, email, name, avatar, access_token, refresh_token, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(userId, "microsoft", providerUserId, email, name, avatar, tokenData.access_token, tokenData.refresh_token || null, Date.now() + tokenData.expires_in * 1000).run();
-
         return Response.redirect(`${appUrl}/dashboard?auth=success`);
       } catch (error) {
-        console.error("Microsoft OAuth error:", error);
+        if (env.SENTRY_DSN) {
+          fetch(env.SENTRY_DSN, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: "Microsoft OAuth error",
+              error: error instanceof Error ? error.message : String(error),
+              context: { callback: "microsoft" }
+            })
+          });
+        }
         return Response.redirect(`${appUrl}/login?error=oauth_failed`);
       }
     }
@@ -4521,6 +4536,34 @@ export default {
       if (!adminStatus) return new Response("Unauthorized", { status: 401 });
       const body = await request.json() as { title: string, message: string, link?: string, type: string };
       return Response.json({ success: true, preview: { ...body, created_at: new Date().toISOString() } });
+    }
+
+    // Logout endpoint
+    if (pathname === "/auth/logout" && request.method === "POST") {
+      // Clear session cookie (and JWT if used in future)
+      const response = Response.redirect("/");
+      response.headers.set("Set-Cookie", "session=; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+      return response;
+    }
+
+    // Admin: List all users with linked providers
+    if (pathname === "/admin/users" && request.method === "GET") {
+      const userId = getCurrentUserId();
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      // Get all users
+      const users = await env.DB.prepare(`SELECT id, email, name, avatar, role, is_premium, created_at FROM users`).all();
+      // For each user, get linked providers
+      const usersWithProviders = await Promise.all(users.results.map(async (user: any) => {
+        const providers = await env.DB.prepare(`SELECT provider FROM oauth_providers WHERE user_id = ?`).bind(user.id).all();
+        return {
+          ...user,
+          providers: providers.results.map((p: any) => p.provider)
+        };
+      }));
+      return Response.json({ users: usersWithProviders });
     }
 
     return new Response("Not Found", { status: 404 });
