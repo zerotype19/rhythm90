@@ -4,6 +4,21 @@ import { Badge } from '../components/ui/badge';
 import { useAuth } from '../hooks/useAuth';
 import AppLayout from '../components/AppLayout';
 import PremiumFeatureGuard from '../components/PremiumFeatureGuard';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 
 interface AnalyticsData {
   activeUsers: number;
@@ -15,20 +30,37 @@ interface AnalyticsData {
     play_count: number;
     signal_count: number;
   }>;
+  timeSeriesData: {
+    dailyUsers: Array<{
+      date: string;
+      user_count: number;
+    }>;
+    dailyPlays: Array<{
+      date: string;
+      play_count: number;
+    }>;
+    dailySignals: Array<{
+      date: string;
+      signal_count: number;
+    }>;
+  };
 }
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
 export default function Analytics() {
   const { user } = useAuth();
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = useState('30d');
 
   useEffect(() => {
     loadAnalytics();
-  }, []);
+  }, [timeRange]);
 
   const loadAnalytics = async () => {
     try {
-      const response = await fetch('/api/analytics', {
+      const response = await fetch(`/api/analytics?range=${timeRange}`, {
         credentials: 'include'
       });
       const data = await response.json();
@@ -38,6 +70,29 @@ export default function Analytics() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-3 border rounded-lg shadow-lg">
+          <p className="font-medium">{formatDate(label)}</p>
+          {payload.map((entry: any, index: number) => (
+            <p key={index} style={{ color: entry.color }}>
+              {entry.name}: {entry.value}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
   };
 
   if (loading) {
@@ -53,11 +108,22 @@ export default function Analytics() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Analytics</h1>
-          <p className="text-muted-foreground">
-            {user?.role === 'admin' ? 'Global platform analytics' : 'Your team analytics'}
-          </p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold">Analytics</h1>
+            <p className="text-muted-foreground">
+              {user?.role === 'admin' ? 'Global platform analytics' : 'Your team analytics'}
+            </p>
+          </div>
+          <select
+            value={timeRange}
+            onChange={(e) => setTimeRange(e.target.value)}
+            className="px-3 py-2 border rounded-md bg-background"
+          >
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="90d">Last 90 days</option>
+          </select>
         </div>
 
         {/* Analytics Overview Cards */}
@@ -117,7 +183,162 @@ export default function Analytics() {
         {/* Premium Analytics Features */}
         <PremiumFeatureGuard feature="Advanced Analytics">
           <div className="space-y-6">
-            {/* Top Teams (Admin only) */}
+            {/* Time Series Charts */}
+            {analytics?.timeSeriesData && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Daily Activity Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Daily Activity</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={analytics.timeSeriesData.dailyPlays}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="date" 
+                          tickFormatter={formatDate}
+                          fontSize={12}
+                        />
+                        <YAxis fontSize={12} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend />
+                        <Line 
+                          type="monotone" 
+                          dataKey="play_count" 
+                          stroke="#8884d8" 
+                          strokeWidth={2}
+                          name="Plays"
+                        />
+                        {analytics.timeSeriesData.dailySignals.map((signal, index) => (
+                          <Line 
+                            key={index}
+                            type="monotone" 
+                            dataKey="signal_count" 
+                            stroke="#82ca9d" 
+                            strokeWidth={2}
+                            name="Signals"
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* User Activity Chart (Admin only) */}
+                {user?.role === 'admin' && analytics.timeSeriesData.dailyUsers && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Daily Active Users</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={analytics.timeSeriesData.dailyUsers}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="date" 
+                            tickFormatter={formatDate}
+                            fontSize={12}
+                          />
+                          <YAxis fontSize={12} />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Line 
+                            type="monotone" 
+                            dataKey="user_count" 
+                            stroke="#ff7300" 
+                            strokeWidth={2}
+                            name="Active Users"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* Top Teams Chart (Admin only) */}
+            {user?.role === 'admin' && analytics?.topTeams && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top Performing Teams</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <BarChart data={analytics.topTeams}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" fontSize={12} />
+                      <YAxis fontSize={12} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="play_count" fill="#8884d8" name="Plays" />
+                      <Bar dataKey="signal_count" fill="#82ca9d" name="Signals" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Team Performance Distribution */}
+            {user?.role === 'admin' && analytics?.topTeams && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Plays Distribution</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                                                 <Pie
+                           data={analytics.topTeams}
+                           cx="50%"
+                           cy="50%"
+                           labelLine={false}
+                           label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
+                           outerRadius={80}
+                           fill="#8884d8"
+                           dataKey="play_count"
+                         >
+                          {analytics.topTeams.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Signals Distribution</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                                                 <Pie
+                           data={analytics.topTeams}
+                           cx="50%"
+                           cy="50%"
+                           labelLine={false}
+                           label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
+                           outerRadius={80}
+                           fill="#82ca9d"
+                           dataKey="signal_count"
+                         >
+                          {analytics.topTeams.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* Top Teams List (Admin only) */}
             {user?.role === 'admin' && analytics?.topTeams && (
               <Card>
                 <CardHeader>
@@ -148,42 +369,6 @@ export default function Analytics() {
                 </CardContent>
               </Card>
             )}
-
-            {/* Advanced Charts Placeholder */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Activity Trends</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-64 flex items-center justify-center bg-muted rounded-lg">
-                  <div className="text-center">
-                    <div className="text-4xl mb-2">📈</div>
-                    <div className="text-muted-foreground">Interactive charts coming soon</div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      Track your team's performance over time
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Signal Analysis */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Signal Analysis</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-64 flex items-center justify-center bg-muted rounded-lg">
-                  <div className="text-center">
-                    <div className="text-4xl mb-2">🔍</div>
-                    <div className="text-muted-foreground">Signal insights coming soon</div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      Understand patterns in your signal data
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </PremiumFeatureGuard>
 
@@ -198,25 +383,20 @@ export default function Analytics() {
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground mb-4">
-                Get detailed insights into your team's performance with advanced analytics features.
+                Get access to interactive charts, time-series data, and detailed insights to track your team's performance over time.
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <h4 className="font-medium mb-2">Free Plan Includes:</h4>
-                  <ul className="space-y-1 text-muted-foreground">
-                    <li>• Basic usage statistics</li>
-                    <li>• Team member count</li>
-                    <li>• Play and signal totals</li>
-                  </ul>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span>
+                  Interactive charts and graphs
                 </div>
-                <div>
-                  <h4 className="font-medium mb-2">Premium Analytics Include:</h4>
-                  <ul className="space-y-1 text-muted-foreground">
-                    <li>• Interactive charts and trends</li>
-                    <li>• Signal pattern analysis</li>
-                    <li>• Performance benchmarking</li>
-                    <li>• Export capabilities</li>
-                  </ul>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span>
+                  Time-series data analysis
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span>
+                  Performance trends
                 </div>
               </div>
             </CardContent>

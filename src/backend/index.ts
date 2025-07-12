@@ -10,6 +10,10 @@ export interface Env {
   TEST_MODE?: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
+  STRIPE_PRICE_ID_MONTHLY?: string;
+  STRIPE_PRICE_ID_YEARLY?: string;
+  STRIPE_CUSTOMER_PORTAL_URL?: string;
+  API_RATE_LIMIT_PER_DAY?: string;
   SLACK_CLIENT_ID?: string;
   SLACK_CLIENT_SECRET?: string;
   SLACK_SIGNING_SECRET?: string;
@@ -368,6 +372,10 @@ export default {
         }
 
         // Create checkout session via Stripe API
+        const priceId = body.plan === 'yearly' ? env.STRIPE_PRICE_ID_YEARLY : env.STRIPE_PRICE_ID_MONTHLY;
+        const planName = body.plan === 'yearly' ? 'Rhythm90 Premium (Yearly)' : 'Rhythm90 Premium (Monthly)';
+        const planDescription = body.plan === 'yearly' ? 'Premium marketing suite - 2 months free' : 'Premium marketing suite';
+        
         const sessionRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
           method: 'POST',
           headers: {
@@ -379,15 +387,13 @@ export default {
             mode: 'subscription',
             success_url: `${appUrl}/dashboard?success=true`,
             cancel_url: `${appUrl}/pricing?canceled=true`,
-            'line_items[0][price_data][currency]': 'usd',
-            'line_items[0][price_data][product_data][name]': body.plan === 'pro' ? 'Rhythm90 Pro' : 'Rhythm90 Premium',
-            'line_items[0][price_data][product_data][description]': body.plan === 'pro' ? 'Professional marketing analytics' : 'Premium marketing suite',
-            'line_items[0][price_data][unit_amount]': (body.plan === 'pro' ? 2900 : 4900).toString(),
-            'line_items[0][price_data][recurring][interval]': 'month',
+            'line_items[0][price]': priceId || (body.plan === 'yearly' ? 'price_yearly_290_usd' : 'price_monthly_29_usd'),
             'line_items[0][quantity]': '1',
             'metadata[team_id]': String(teamId),
             'metadata[user_id]': String(userId),
-            'metadata[plan]': String(body.plan)
+            'metadata[plan]': String(body.plan),
+            'metadata[plan_name]': planName,
+            'metadata[plan_description]': planDescription
           })
         });
         const sessionData = await sessionRes.json() as any;
@@ -2433,56 +2439,162 @@ export default {
       return addCorsHeaders(Response.json({ signals: signals.results }));
     }
 
-    if (pathname.startsWith("/api/analytics") && request.method === "GET") {
-      const apiKey = request.headers.get("Authorization")?.replace("Bearer ", "");
+    // Enhanced Analytics with time-series data
+    if (pathname === "/api/analytics" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
       
-      if (!apiKey) {
-        return Response.json({ error: "API key required" }, { status: 401 });
-      }
-
-      // Validate API key
-      const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
-        .then(hash => Array.from(new Uint8Array(hash))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join(''));
-
-      const apiKeyRecord = await env.DB.prepare(`
-        SELECT ak.team_id, ak.is_active
-        FROM api_keys ak
-        WHERE ak.key_hash = ? AND ak.is_active = TRUE
-      `).bind(keyHash).first();
-
-      if (!apiKeyRecord) {
-        return Response.json({ error: "Invalid API key" }, { status: 401 });
-      }
-
-      // Update last used
-      await env.DB.prepare(`
-        UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?
-      `).bind(keyHash).run();
-
-      // Get basic analytics for the team
-      const playsCount = await env.DB.prepare(`
-        SELECT COUNT(*) as count FROM plays WHERE team_id = ?
-      `).bind(apiKeyRecord.team_id).first();
-
-      const signalsCount = await env.DB.prepare(`
-        SELECT COUNT(*) as count FROM signals s
-        JOIN plays p ON s.play_id = p.id
-        WHERE p.team_id = ?
-      `).bind(apiKeyRecord.team_id).first();
-
-      const aiUsageCount = await env.DB.prepare(`
-        SELECT SUM(count) as total FROM ai_usage WHERE team_id = ?
-      `).bind(apiKeyRecord.team_id).first();
-
-      return addCorsHeaders(Response.json({
-        analytics: {
-          totalPlays: playsCount?.count || 0,
-          totalSignals: signalsCount?.count || 0,
-          totalAIUsage: aiUsageCount?.total || 0
+      try {
+        let query = '';
+        let params: any[] = [];
+        
+        if (adminStatus) {
+          // Admin view - global analytics
+          query = `
+            SELECT 
+              (SELECT COUNT(*) FROM users WHERE is_active = TRUE) as active_users,
+              (SELECT COUNT(*) FROM plays WHERE is_archived = FALSE) as total_plays,
+              (SELECT COUNT(*) FROM signals) as total_signals,
+              (SELECT COUNT(*) FROM teams WHERE is_active = TRUE) as total_teams
+          `;
+        } else {
+          // User view - team-specific analytics
+          const user = await env.DB.prepare(`SELECT current_team_id FROM users WHERE id = ?`).bind(userId).first();
+          if (!user?.current_team_id) {
+            return jsonResponse({ 
+              activeUsers: 0,
+              totalPlays: 0,
+              totalSignals: 0,
+              topTeams: [],
+              timeSeriesData: {
+                dailyUsers: [],
+                dailyPlays: [],
+                dailySignals: []
+              }
+            });
+          }
+          
+          query = `
+            SELECT 
+              (SELECT COUNT(*) FROM team_users WHERE team_id = ?) as active_users,
+              (SELECT COUNT(*) FROM plays WHERE team_id = ? AND is_archived = FALSE) as total_plays,
+              (SELECT COUNT(*) FROM signals s JOIN plays p ON s.play_id = p.id WHERE p.team_id = ?) as total_signals,
+              (SELECT COUNT(*) FROM teams WHERE id = ?) as total_teams
+          `;
+          params = [user.current_team_id, user.current_team_id, user.current_team_id, user.current_team_id];
         }
-      }));
+
+        const analytics = await env.DB.prepare(query).bind(...params).first();
+
+        // Get time-series data for last 30 days
+        let timeSeriesData = {
+          dailyUsers: [],
+          dailyPlays: [],
+          dailySignals: []
+        };
+
+        if (adminStatus) {
+          // Admin: Global daily metrics
+          const dailyUsers = await env.DB.prepare(`
+            SELECT 
+              DATE(created_at) as date,
+              COUNT(DISTINCT user_id) as user_count
+            FROM user_sessions 
+            WHERE created_at > datetime('now', '-30 days')
+            GROUP BY DATE(created_at)
+            ORDER BY date
+          `).all();
+
+          const dailyPlays = await env.DB.prepare(`
+            SELECT 
+              DATE(created_at) as date,
+              COUNT(*) as play_count
+            FROM plays 
+            WHERE created_at > datetime('now', '-30 days')
+            GROUP BY DATE(created_at)
+            ORDER BY date
+          `).all();
+
+          const dailySignals = await env.DB.prepare(`
+            SELECT 
+              DATE(s.created_at) as date,
+              COUNT(*) as signal_count
+            FROM signals s
+            JOIN plays p ON s.play_id = p.id
+            WHERE s.created_at > datetime('now', '-30 days')
+            GROUP BY DATE(s.created_at)
+            ORDER BY date
+          `).all();
+
+          timeSeriesData = {
+            dailyUsers: dailyUsers.results,
+            dailyPlays: dailyPlays.results,
+            dailySignals: dailySignals.results
+          };
+        } else {
+          // User: Team-specific daily metrics
+          const user = await env.DB.prepare(`SELECT current_team_id FROM users WHERE id = ?`).bind(userId).first();
+          if (user?.current_team_id) {
+            const dailyPlays = await env.DB.prepare(`
+              SELECT 
+                DATE(created_at) as date,
+                COUNT(*) as play_count
+              FROM plays 
+              WHERE team_id = ? AND created_at > datetime('now', '-30 days')
+              GROUP BY DATE(created_at)
+              ORDER BY date
+            `).bind(user.current_team_id).all();
+
+            const dailySignals = await env.DB.prepare(`
+              SELECT 
+                DATE(s.created_at) as date,
+                COUNT(*) as signal_count
+              FROM signals s
+              JOIN plays p ON s.play_id = p.id
+              WHERE p.team_id = ? AND s.created_at > datetime('now', '-30 days')
+              GROUP BY DATE(s.created_at)
+              ORDER BY date
+            `).bind(user.current_team_id).all();
+
+            timeSeriesData = {
+              dailyUsers: [], // Team doesn't track daily users
+              dailyPlays: dailyPlays.results,
+              dailySignals: dailySignals.results
+            };
+          }
+        }
+
+        // Get top teams (for admin view)
+        let topTeams: any[] = [];
+        if (adminStatus) {
+          const teams = await env.DB.prepare(`
+            SELECT 
+              t.name,
+              COUNT(DISTINCT p.id) as play_count,
+              COUNT(DISTINCT s.id) as signal_count
+            FROM teams t
+            LEFT JOIN plays p ON t.id = p.team_id AND p.is_archived = FALSE
+            LEFT JOIN signals s ON p.id = s.play_id
+            WHERE t.is_active = TRUE
+            GROUP BY t.id
+            ORDER BY play_count DESC, signal_count DESC
+            LIMIT 10
+          `).all();
+          topTeams = teams.results;
+        }
+
+        return jsonResponse({
+          activeUsers: analytics?.active_users || 0,
+          totalPlays: analytics?.total_plays || 0,
+          totalSignals: analytics?.total_signals || 0,
+          totalTeams: analytics?.total_teams || 0,
+          topTeams,
+          timeSeriesData
+        });
+      } catch (error) {
+        console.error("Error fetching analytics:", error);
+        return jsonResponse({ error: "Failed to fetch analytics" }, 500);
+      }
     }
 
     // Workshop notification settings
@@ -2984,26 +3096,69 @@ export default {
       ).run();
 
       // Handle event types
-      if (event.type === "invoice.payment_succeeded") {
-        const customerId = event.data.object.customer;
-        // Find team by Stripe customer ID
-        const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
-        if (team) {
-          await env.DB.prepare(`UPDATE teams SET is_premium = 1, premium_grace_until = NULL WHERE id = ?`).bind(team.id).run();
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object;
+          const teamId = session.metadata?.team_id;
+          const plan = session.metadata?.plan;
+          
+          if (teamId) {
+            // Update team and user premium status
+            await env.DB.prepare(`UPDATE teams SET is_premium = 1, billing_status = ? WHERE id = ?`).bind(plan || 'premium', teamId).run();
+            await env.DB.prepare(`UPDATE users SET is_premium = 1 WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)`).bind(teamId).run();
+          }
+          break;
         }
-      } else if (event.type === "invoice.payment_failed") {
-        const customerId = event.data.object.customer;
-        const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
-        if (team) {
-          await env.DB.prepare(`UPDATE teams SET is_premium = 0, at_risk = 1 WHERE id = ?`).bind(team.id).run();
+        
+        case "customer.subscription.updated": {
+          const subscription = event.data.object;
+          const customerId = subscription.customer;
+          const status = subscription.status;
+          
+          const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
+          if (team) {
+            if (status === 'active') {
+              await env.DB.prepare(`UPDATE teams SET is_premium = 1, premium_grace_until = NULL WHERE id = ?`).bind(team.id).run();
+              await env.DB.prepare(`UPDATE users SET is_premium = 1 WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)`).bind(team.id).run();
+            } else if (status === 'past_due' || status === 'unpaid') {
+              await env.DB.prepare(`UPDATE teams SET is_premium = 0, at_risk = 1 WHERE id = ?`).bind(team.id).run();
+              await env.DB.prepare(`UPDATE users SET is_premium = 0 WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)`).bind(team.id).run();
+            }
+          }
+          break;
         }
-      } else if (event.type === "customer.subscription.deleted") {
-        const customerId = event.data.object.customer;
-        const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
-        if (team) {
-          // Set 7-day grace period
-          const graceUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-          await env.DB.prepare(`UPDATE teams SET is_premium = 0, premium_grace_until = ?, at_risk = 1 WHERE id = ?`).bind(graceUntil, team.id).run();
+        
+        case "customer.subscription.deleted": {
+          const subscription = event.data.object;
+          const customerId = subscription.customer;
+          
+          const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
+          if (team) {
+            // Immediate invalidation (no grace period as requested)
+            await env.DB.prepare(`UPDATE teams SET is_premium = 0, billing_status = 'free', premium_grace_until = NULL WHERE id = ?`).bind(team.id).run();
+            await env.DB.prepare(`UPDATE users SET is_premium = 0 WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)`).bind(team.id).run();
+          }
+          break;
+        }
+        
+        case "invoice.payment_succeeded": {
+          const customerId = event.data.object.customer;
+          const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
+          if (team) {
+            await env.DB.prepare(`UPDATE teams SET is_premium = 1, premium_grace_until = NULL, at_risk = 0 WHERE id = ?`).bind(team.id).run();
+            await env.DB.prepare(`UPDATE users SET is_premium = 1 WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)`).bind(team.id).run();
+          }
+          break;
+        }
+        
+        case "invoice.payment_failed": {
+          const customerId = event.data.object.customer;
+          const team = await env.DB.prepare(`SELECT id FROM teams WHERE stripe_customer_id = ?`).bind(customerId).first();
+          if (team) {
+            await env.DB.prepare(`UPDATE teams SET is_premium = 0, at_risk = 1 WHERE id = ?`).bind(team.id).run();
+            await env.DB.prepare(`UPDATE users SET is_premium = 0 WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)`).bind(team.id).run();
+          }
+          break;
         }
       }
 
@@ -4648,6 +4803,198 @@ export default {
       }));
       return Response.json({ users: usersWithProviders });
     }
+
+    // ===== DEVELOPER PORTAL API ENDPOINTS =====
+
+    // Generate new API key
+    if (pathname === "/api/developer/keys" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { name: string };
+        const user = await env.DB.prepare(`SELECT current_team_id FROM users WHERE id = ?`).bind(userId).first();
+        
+        if (!user?.current_team_id) {
+          return jsonResponse({ error: "No active team selected" }, 400);
+        }
+
+        // Generate API key
+        const apiKey = `rk_${crypto.randomUUID().replace(/-/g, '')}`;
+        const keyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
+          .then(hash => Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join(''));
+
+        // Store API key
+        const keyId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO api_keys (id, user_id, team_id, key_hash, name, permissions, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(
+          keyId,
+          userId,
+          user.current_team_id,
+          keyHash,
+          body.name,
+          JSON.stringify(['read:plays', 'read:signals', 'read:analytics', 'write:signals'])
+        ).run();
+
+        return jsonResponse({ 
+          success: true, 
+          apiKey,
+          keyId,
+          message: "API key generated successfully. Store it securely - it won't be shown again."
+        });
+      } catch (error) {
+        console.error("Error generating API key:", error);
+        return jsonResponse({ error: "Failed to generate API key" }, 500);
+      }
+    }
+
+    // List API keys
+    if (pathname === "/api/developer/keys" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const user = await env.DB.prepare(`SELECT current_team_id FROM users WHERE id = ?`).bind(userId).first();
+        
+        if (!user?.current_team_id) {
+          return jsonResponse({ error: "No active team selected" }, 400);
+        }
+
+        const keys = await env.DB.prepare(`
+          SELECT 
+            id,
+            name,
+            permissions,
+            last_used_at,
+            expires_at,
+            is_active,
+            created_at
+          FROM api_keys 
+          WHERE team_id = ? AND is_active = TRUE
+          ORDER BY created_at DESC
+        `).bind(user.current_team_id).all();
+
+        return jsonResponse({ keys: keys.results });
+      } catch (error) {
+        console.error("Error fetching API keys:", error);
+        return jsonResponse({ error: "Failed to fetch API keys" }, 500);
+      }
+    }
+
+    // Revoke API key
+    if (pathname === "/api/developer/keys/revoke" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { keyId: string };
+        const user = await env.DB.prepare(`SELECT current_team_id FROM users WHERE id = ?`).bind(userId).first();
+        
+        if (!user?.current_team_id) {
+          return jsonResponse({ error: "No active team selected" }, 400);
+        }
+
+        // Verify key belongs to user's team
+        const key = await env.DB.prepare(`
+          SELECT id FROM api_keys 
+          WHERE id = ? AND team_id = ? AND is_active = TRUE
+        `).bind(body.keyId, user.current_team_id).first();
+
+        if (!key) {
+          return jsonResponse({ error: "API key not found or access denied" }, 404);
+        }
+
+        // Immediate invalidation (no grace period)
+        await env.DB.prepare(`UPDATE api_keys SET is_active = FALSE WHERE id = ?`).bind(body.keyId).run();
+
+        return jsonResponse({ success: true, message: "API key revoked successfully" });
+      } catch (error) {
+        console.error("Error revoking API key:", error);
+        return jsonResponse({ error: "Failed to revoke API key" }, 500);
+      }
+    }
+
+    // Get API usage metrics
+    if (pathname === "/api/developer/usage" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const user = await env.DB.prepare(`SELECT current_team_id FROM users WHERE id = ?`).bind(userId).first();
+        
+        if (!user?.current_team_id) {
+          return jsonResponse({ error: "No active team selected" }, 400);
+        }
+
+        // Get usage for last 30 days
+        const usage = await env.DB.prepare(`
+          SELECT 
+            DATE(created_at) as date,
+            COUNT(*) as request_count,
+            AVG(response_time_ms) as avg_response_time,
+            COUNT(CASE WHEN response_code >= 400 THEN 1 END) as error_count
+          FROM api_usage_logs aul
+          JOIN api_keys ak ON aul.api_key_id = ak.id
+          WHERE ak.team_id = ? 
+            AND aul.created_at > datetime('now', '-30 days')
+          GROUP BY DATE(created_at)
+          ORDER BY date DESC
+        `).bind(user.current_team_id).all();
+
+        // Get total usage stats
+        const totalStats = await env.DB.prepare(`
+          SELECT 
+            COUNT(*) as total_requests,
+            COUNT(DISTINCT DATE(created_at)) as active_days,
+            AVG(response_time_ms) as overall_avg_response_time
+          FROM api_usage_logs aul
+          JOIN api_keys ak ON aul.api_key_id = ak.id
+          WHERE ak.team_id = ? 
+            AND aul.created_at > datetime('now', '-30 days')
+        `).bind(user.current_team_id).first();
+
+        // Get rate limit info
+        const rateLimit = parseInt(env.API_RATE_LIMIT_PER_DAY || '1000');
+        const todayUsage = await env.DB.prepare(`
+          SELECT COUNT(*) as today_requests
+          FROM api_usage_logs aul
+          JOIN api_keys ak ON aul.api_key_id = ak.id
+          WHERE ak.team_id = ? 
+            AND DATE(aul.created_at) = DATE('now')
+        `).bind(user.current_team_id).first();
+
+        return jsonResponse({
+          dailyUsage: usage.results,
+          totalStats: {
+            totalRequests: totalStats?.total_requests || 0,
+            activeDays: totalStats?.active_days || 0,
+            overallAvgResponseTime: totalStats?.overall_avg_response_time || 0
+          },
+          rateLimit: {
+            daily: rateLimit,
+            used: todayUsage?.today_requests || 0,
+            remaining: Math.max(0, rateLimit - (todayUsage?.today_requests || 0))
+          }
+        });
+      } catch (error) {
+        console.error("Error fetching API usage:", error);
+        return jsonResponse({ error: "Failed to fetch API usage" }, 500);
+      }
+    }
+
+    // ===== ANALYTICS ENDPOINTS =====
 
     return new Response("Not Found", { status: 404 });
   }
