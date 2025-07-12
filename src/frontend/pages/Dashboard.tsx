@@ -1,38 +1,49 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
 import Loading from "../components/Loading";
 import OnboardingSidebar from "../components/OnboardingSidebar";
 import AiAssistantPanel from "../components/AiAssistantPanel";
 import AppLayout from "../components/AppLayout";
+import CreateTeamModal from "../components/CreateTeamModal";
+import CreatePlayModal from "../components/CreatePlayModal";
+import CreateSignalModal from "../components/CreateSignalModal";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ playCount: 0, signalCount: 0 });
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
+  const [showCreatePlayModal, setShowCreatePlayModal] = useState(false);
+  const [showCreateSignalModal, setShowCreateSignalModal] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      try {
-        // Remove fetchDashboardStats since endpoint does not exist
-        // const [statsData, userData] = await Promise.all([
-        //   fetchDashboardStats(),
-        //   fetch(`${import.meta.env.VITE_API_URL}/me`).then(res => res.json())
-        // ]);
-        // setStats(statsData);
-        // setUser(userData);
-        // Instead, just fetch user for now
-        const userData = await fetch(`${import.meta.env.VITE_API_URL}/me`).then(res => res.json());
-        setUser(userData);
-        setStats({ playCount: 0, signalCount: 0 }); // Placeholder values
-      } catch (error) {
-        console.error('Failed to load dashboard data:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    loadDashboardData();
   }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const [userData, playsData] = await Promise.all([
+        fetch('/me', { credentials: 'include' }).then(res => res.json()),
+        fetch('/api/plays', { credentials: 'include' }).then(res => res.json()).catch(() => ({ plays: [] }))
+      ]);
+      
+      setUser(userData);
+      setStats({ 
+        playCount: playsData.plays?.length || 0, 
+        signalCount: 0 // TODO: Add signal count endpoint
+      });
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuccess = () => {
+    loadDashboardData(); // Refresh data after successful creation
+  };
 
   if (loading) return <Loading />;
 
@@ -107,18 +118,32 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="text-center p-4 border border-border rounded-lg hover:bg-muted cursor-pointer transition-all hover:scale-105">
-              <div className="text-2xl mb-2">📊</div>
-              <p className="font-medium text-foreground">View Plays</p>
-            </div>
-            <div className="text-center p-4 border border-border rounded-lg hover:bg-muted cursor-pointer transition-all hover:scale-105">
-              <div className="text-2xl mb-2">📝</div>
+            <Button
+              variant="outline"
+              className="h-auto p-4 flex flex-col items-center space-y-2 hover:bg-muted cursor-pointer transition-all hover:scale-105"
+              onClick={() => setShowCreatePlayModal(true)}
+            >
+              <div className="text-2xl">🎯</div>
+              <p className="font-medium text-foreground">Create Play</p>
+            </Button>
+            
+            <Button
+              variant="outline"
+              className="h-auto p-4 flex flex-col items-center space-y-2 hover:bg-muted cursor-pointer transition-all hover:scale-105"
+              onClick={() => setShowCreateSignalModal(true)}
+            >
+              <div className="text-2xl">📊</div>
               <p className="font-medium text-foreground">Log Signal</p>
-            </div>
-            <div className="text-center p-4 border border-border rounded-lg hover:bg-muted cursor-pointer transition-all hover:scale-105 sm:col-span-2 lg:col-span-1">
-              <div className="text-2xl mb-2">👥</div>
-              <p className="font-medium text-foreground">Team Settings</p>
-            </div>
+            </Button>
+            
+            <Button
+              variant="outline"
+              className="h-auto p-4 flex flex-col items-center space-y-2 hover:bg-muted cursor-pointer transition-all hover:scale-105 sm:col-span-2 lg:col-span-1"
+              onClick={() => setShowCreateTeamModal(true)}
+            >
+              <div className="text-2xl">👥</div>
+              <p className="font-medium text-foreground">Create Team</p>
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -127,6 +152,25 @@ export default function Dashboard() {
       <div className="flex justify-center">
         <AiAssistantPanel />
       </div>
+
+      {/* Modals */}
+      <CreateTeamModal
+        isOpen={showCreateTeamModal}
+        onClose={() => setShowCreateTeamModal(false)}
+        onSuccess={handleSuccess}
+      />
+      
+      <CreatePlayModal
+        isOpen={showCreatePlayModal}
+        onClose={() => setShowCreatePlayModal(false)}
+        onSuccess={handleSuccess}
+      />
+      
+      <CreateSignalModal
+        isOpen={showCreateSignalModal}
+        onClose={() => setShowCreateSignalModal(false)}
+        onSuccess={handleSuccess}
+      />
     </AppLayout>
   );
 } 

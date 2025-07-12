@@ -4874,4 +4874,366 @@ function hexToBytes(hex: string): Uint8Array {
     bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
   }
   return bytes;
-} 
+}
+
+    // ===== NEW CORE LOGGED-IN FEATURES =====
+
+    // 1. Onboarding Status Endpoint
+    if (pathname === "/api/onboarding-status" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const user = await env.DB.prepare(`
+          SELECT 
+            has_completed_profile,
+            has_joined_team,
+            has_created_play,
+            has_logged_signal
+          FROM users WHERE id = ?
+        `).bind(userId).first();
+
+        if (!user) {
+          return jsonResponse({ error: "User not found" }, 404);
+        }
+
+        return jsonResponse({
+          hasCompletedProfile: user.has_completed_profile || false,
+          hasJoinedTeam: user.has_joined_team || false,
+          hasCreatedPlay: user.has_created_play || false,
+          hasLoggedSignal: user.has_logged_signal || false
+        });
+      } catch (error) {
+        console.error("Error fetching onboarding status:", error);
+        return jsonResponse({ error: "Failed to fetch onboarding status" }, 500);
+      }
+    }
+
+    // 2. Team Creation Endpoint
+    if (pathname === "/api/teams" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { name: string };
+        
+        // Validation
+        if (!body.name || body.name.length < 3 || body.name.length > 50) {
+          return errorResponse("Team name must be between 3 and 50 characters", 400);
+        }
+
+        // Check for uniqueness per user
+        const existingTeam = await env.DB.prepare(`
+          SELECT t.id FROM teams t
+          JOIN team_users tu ON t.id = tu.team_id
+          WHERE tu.user_id = ? AND t.name = ?
+        `).bind(userId, body.name).first();
+
+        if (existingTeam) {
+          return errorResponse("You already have a team with this name", 400);
+        }
+
+        // Create team
+        const teamId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO teams (id, name, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+        `).bind(teamId, body.name).run();
+
+        // Add user as owner
+        await env.DB.prepare(`
+          INSERT INTO team_users (team_id, user_id, role) VALUES (?, ?, 'owner')
+        `).bind(teamId, userId).run();
+
+        // Update user's current team and onboarding status
+        await env.DB.prepare(`
+          UPDATE users SET 
+            current_team_id = ?,
+            has_joined_team = TRUE
+          WHERE id = ?
+        `).bind(teamId, userId).run();
+
+        return jsonResponse({ teamId });
+      } catch (error) {
+        console.error("Error creating team:", error);
+        return jsonResponse({ error: "Failed to create team" }, 500);
+      }
+    }
+
+    // 3. Get User's Teams Endpoint
+    if (pathname === "/api/teams" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const teams = await env.DB.prepare(`
+          SELECT 
+            t.id,
+            t.name,
+            t.created_at,
+            tu.role as user_role,
+            (t.id = u.current_team_id) as is_current_team
+          FROM teams t
+          JOIN team_users tu ON t.id = tu.team_id
+          JOIN users u ON u.id = ?
+          WHERE tu.user_id = ?
+          ORDER BY t.created_at DESC
+        `).bind(userId, userId).all();
+
+        return jsonResponse({ teams: teams.results });
+      } catch (error) {
+        console.error("Error fetching teams:", error);
+        return jsonResponse({ error: "Failed to fetch teams" }, 500);
+      }
+    }
+
+    // 4. Switch Team Endpoint
+    if (pathname === "/api/teams/switch" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { teamId: string };
+        
+        // Verify user belongs to this team
+        const teamMembership = await env.DB.prepare(`
+          SELECT team_id FROM team_users WHERE user_id = ? AND team_id = ?
+        `).bind(userId, body.teamId).first();
+
+        if (!teamMembership) {
+          return errorResponse("You don't have access to this team", 403);
+        }
+
+        // Update current team
+        await env.DB.prepare(`
+          UPDATE users SET current_team_id = ? WHERE id = ?
+        `).bind(body.teamId, userId).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error switching team:", error);
+        return jsonResponse({ error: "Failed to switch team" }, 500);
+      }
+    }
+
+    // 5. Create Play Endpoint
+    if (pathname === "/api/plays" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as {
+          name: string;
+          targetOutcome: string;
+          whyThisPlay: string;
+          howToRun: string;
+        };
+
+        // Validation
+        if (!body.name || body.name.length < 3) {
+          return errorResponse("Play name must be at least 3 characters", 400);
+        }
+
+        // Get user's current team
+        const user = await env.DB.prepare(`
+          SELECT current_team_id FROM users WHERE id = ?
+        `).bind(userId).first();
+
+        if (!user?.current_team_id) {
+          return errorResponse("No active team selected", 400);
+        }
+
+        // Create play
+        const playId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO plays (id, team_id, name, target_outcome, why_this_play, how_to_run, created_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(
+          playId,
+          user.current_team_id,
+          body.name,
+          body.targetOutcome,
+          body.whyThisPlay,
+          body.howToRun,
+          userId
+        ).run();
+
+        // Update onboarding status
+        await env.DB.prepare(`
+          UPDATE users SET has_created_play = TRUE WHERE id = ?
+        `).bind(userId).run();
+
+        return jsonResponse({ playId });
+      } catch (error) {
+        console.error("Error creating play:", error);
+        return jsonResponse({ error: "Failed to create play" }, 500);
+      }
+    }
+
+    // 6. Create Signal Endpoint
+    if (pathname === "/api/signals" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as {
+          playId: string;
+          description: string;
+        };
+
+        // Validation
+        if (!body.description || body.description.length < 3) {
+          return errorResponse("Signal description must be at least 3 characters", 400);
+        }
+
+        // Verify play exists and user has access
+        const play = await env.DB.prepare(`
+          SELECT p.id FROM plays p
+          JOIN teams t ON p.team_id = t.id
+          JOIN team_users tu ON t.id = tu.team_id
+          WHERE p.id = ? AND tu.user_id = ?
+        `).bind(body.playId, userId).first();
+
+        if (!play) {
+          return errorResponse("Play not found or access denied", 404);
+        }
+
+        // Create signal
+        const signalId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO signals (id, play_id, observation, created_by, created_at)
+          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(signalId, body.playId, body.description, userId).run();
+
+        // Update onboarding status
+        await env.DB.prepare(`
+          UPDATE users SET has_logged_signal = TRUE WHERE id = ?
+        `).bind(userId).run();
+
+        return jsonResponse({ signalId });
+      } catch (error) {
+        console.error("Error creating signal:", error);
+        return jsonResponse({ error: "Failed to create signal" }, 500);
+      }
+    }
+
+    // 7. Get Plays for Current Team
+    if (pathname === "/api/plays" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const user = await env.DB.prepare(`
+          SELECT current_team_id FROM users WHERE id = ?
+        `).bind(userId).first();
+
+        if (!user?.current_team_id) {
+          return jsonResponse({ plays: [] });
+        }
+
+        const plays = await env.DB.prepare(`
+          SELECT 
+            id,
+            name,
+            target_outcome,
+            why_this_play,
+            how_to_run,
+            created_at,
+            created_by
+          FROM plays 
+          WHERE team_id = ?
+          ORDER BY created_at DESC
+        `).bind(user.current_team_id).all();
+
+        return jsonResponse({ plays: plays.results });
+      } catch (error) {
+        console.error("Error fetching plays:", error);
+        return jsonResponse({ error: "Failed to fetch plays" }, 500);
+      }
+    }
+
+    // 8. Get Signals for Play
+    if (pathname === "/api/signals" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const url = new URL(request.url);
+      const playId = url.searchParams.get('playId');
+
+      if (!playId) {
+        return errorResponse("Play ID is required", 400);
+      }
+
+      try {
+        // Verify user has access to this play
+        const play = await env.DB.prepare(`
+          SELECT p.id FROM plays p
+          JOIN teams t ON p.team_id = t.id
+          JOIN team_users tu ON t.id = tu.team_id
+          WHERE p.id = ? AND tu.user_id = ?
+        `).bind(playId, userId).first();
+
+        if (!play) {
+          return errorResponse("Play not found or access denied", 404);
+        }
+
+        const signals = await env.DB.prepare(`
+          SELECT 
+            id,
+            observation,
+            created_at,
+            created_by
+          FROM signals 
+          WHERE play_id = ?
+          ORDER BY created_at DESC
+        `).bind(playId).all();
+
+        return jsonResponse({ signals: signals.results });
+      } catch (error) {
+        console.error("Error fetching signals:", error);
+        return jsonResponse({ error: "Failed to fetch signals" }, 500);
+      }
+    }
+
+    // 9. Admin Debug Endpoint (Optional)
+    if (pathname === "/api/admin/debug" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const [users, teams, plays, signals] = await Promise.all([
+          env.DB.prepare(`SELECT id, email, name, role, created_at FROM users ORDER BY created_at DESC LIMIT 50`).all(),
+          env.DB.prepare(`SELECT id, name, created_at FROM teams ORDER BY created_at DESC LIMIT 50`).all(),
+          env.DB.prepare(`SELECT id, team_id, name, created_at FROM plays ORDER BY created_at DESC LIMIT 50`).all(),
+          env.DB.prepare(`SELECT id, play_id, observation, created_at FROM signals ORDER BY created_at DESC LIMIT 50`).all()
+        ]);
+
+        return jsonResponse({
+          users: users.results,
+          teams: teams.results,
+          plays: plays.results,
+          signals: signals.results
+        });
+      } catch (error) {
+        console.error("Error fetching debug data:", error);
+        return jsonResponse({ error: "Failed to fetch debug data" }, 500);
+      }
+    } 
