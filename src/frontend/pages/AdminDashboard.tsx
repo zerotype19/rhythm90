@@ -5,6 +5,7 @@ import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useAuth } from '../hooks/useAuth';
+import * as Sentry from "@sentry/react";
 
 // API helper functions
 const api = {
@@ -410,7 +411,7 @@ export default function AdminDashboard() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-11">
+        <TabsList className="grid w-full grid-cols-13">
           <TabsTrigger value="users">Users ({users.length})</TabsTrigger>
           <TabsTrigger value="teams">Teams ({teams.length})</TabsTrigger>
           <TabsTrigger value="plays">Plays ({plays.length})</TabsTrigger>
@@ -421,6 +422,8 @@ export default function AdminDashboard() {
           <TabsTrigger value="system">System Health</TabsTrigger>
           <TabsTrigger value="feedback">Feedback ({feedback.length})</TabsTrigger>
           <TabsTrigger value="experiments">Experiments</TabsTrigger>
+          <TabsTrigger value="audit-logs">Audit Logs</TabsTrigger>
+          <TabsTrigger value="social-drafts">Social Drafts</TabsTrigger>
           <TabsTrigger value="dashboard">Data & Signal Dashboard</TabsTrigger>
         </TabsList>
 
@@ -1015,14 +1018,42 @@ export default function AdminDashboard() {
         <TabsContent value="system" className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">System Health</h2>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={loadData}
-              disabled={loading}
-            >
-              {loading ? 'Refreshing...' : 'Refresh'}
-            </Button>
+            <div className="space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Test Sentry error reporting
+                  throw new Error('Test error from admin dashboard');
+                }}
+              >
+                Test Sentry Error
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Test Sentry performance monitoring
+                  const transaction = Sentry.startTransaction({
+                    name: 'Admin Dashboard Test Transaction',
+                    op: 'test',
+                  });
+                  
+                  setTimeout(() => {
+                    transaction.finish();
+                    alert('Sentry performance transaction completed');
+                  }, 1000);
+                }}
+              >
+                Test Sentry Performance
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={loadData}
+                disabled={loading}
+              >
+                {loading ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            </div>
           </div>
 
           {/* System Status Overview */}
@@ -1365,6 +1396,124 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="audit-logs" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Audit Logs</h2>
+            <Button
+              variant="outline"
+              onClick={() => {
+                // TODO: Add export functionality
+                alert('Export audit logs functionality coming soon');
+              }}
+            >
+              Export CSV
+            </Button>
+          </div>
+          
+          {/* Filters */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <input
+              type="text"
+              placeholder="Action Type"
+              className="px-3 py-2 border border-input bg-background rounded-md text-sm"
+            />
+            <input
+              type="text"
+              placeholder="Admin User ID"
+              className="px-3 py-2 border border-input bg-background rounded-md text-sm"
+            />
+            <input
+              type="text"
+              placeholder="Target User ID"
+              className="px-3 py-2 border border-input bg-background rounded-md text-sm"
+            />
+            <input
+              type="date"
+              className="px-3 py-2 border border-input bg-background rounded-md text-sm"
+            />
+            <input
+              type="date"
+              className="px-3 py-2 border border-input bg-background rounded-md text-sm"
+            />
+          </div>
+
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Admin</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Target User</TableHead>
+                  <TableHead>Old Value</TableHead>
+                  <TableHead>New Value</TableHead>
+                  <TableHead>Details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    Audit logs functionality coming soon
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="social-drafts" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Social Media Drafts</h2>
+            <Button
+              variant="outline"
+              onClick={() => {
+                // TODO: Add create draft modal
+                alert('Create social draft functionality coming soon');
+              }}
+            >
+              Create Draft
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Twitter Launch
+                  <Badge variant="outline">Draft</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  🚀 Just launched Rhythm90 - AI-powered product strategy insights! Turn observations into actionable insights with your team. Check it out: https://rhythm90.io #ProductStrategy #AI #Launch
+                </p>
+                <div className="flex space-x-2">
+                  <Button variant="outline" size="sm">Edit</Button>
+                  <Button variant="outline" size="sm">Schedule</Button>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  LinkedIn Launch
+                  <Badge variant="outline">Draft</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Excited to share Rhythm90, our new AI-powered platform that helps product teams turn observations into actionable insights. Built for collaboration and data-driven decision making. https://rhythm90.io
+                </p>
+                <div className="flex space-x-2">
+                  <Button variant="outline" size="sm">Edit</Button>
+                  <Button variant="outline" size="sm">Schedule</Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 

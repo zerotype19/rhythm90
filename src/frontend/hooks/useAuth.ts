@@ -41,8 +41,44 @@ export function useAuth() {
   }, []);
 
   useEffect(() => {
-    checkAuthStatus();
-  }, [checkAuthStatus]);
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          const userData = await response.json();
+          setUser(userData.user);
+          setLoading(false);
+          
+          // Set Sentry user context
+          if ((window as any).setSentryUser) {
+            (window as any).setSentryUser(userData.user);
+          }
+        } else {
+          setUser(null);
+          setLoading(false);
+          
+          // Clear Sentry user context
+          if ((window as any).setSentryUser) {
+            (window as any).setSentryUser(null);
+          }
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        setUser(null);
+        setLoading(false);
+        
+        // Clear Sentry user context
+        if ((window as any).setSentryUser) {
+          (window as any).setSentryUser(null);
+        }
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   // Check auth status when URL contains auth=success (after OAuth redirect)
   useEffect(() => {

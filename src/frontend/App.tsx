@@ -27,6 +27,7 @@ import Invite from "./pages/Invite";
 import AcceptInvite from "./pages/AcceptInvite";
 import RequestPasswordReset from "./pages/RequestPasswordReset";
 import ResetPassword from "./pages/ResetPassword";
+import FeatureRequests from "./pages/FeatureRequests";
 
 function App() {
   return (
@@ -45,6 +46,7 @@ function App() {
               <Route path="/accept-invite" element={<AcceptInvite />} />
               <Route path="/request-password-reset" element={<RequestPasswordReset />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/feature-requests" element={<FeatureRequests />} />
 
               {/* App Routes */}
               <Route path="/dashboard" element={<Dashboard />} />

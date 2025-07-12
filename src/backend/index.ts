@@ -6556,6 +6556,788 @@ export default {
       }
     }
 
+    // Update experiment status (admin only)
+    if (pathname.match(/^\/api\/admin\/experiments\/([^\/]+)\/status$/) && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const experimentId = pathname.split('/')[4];
+      const body = await request.json() as { isActive: boolean };
+
+      try {
+        await env.DB.prepare(`
+          UPDATE experiments 
+          SET is_active = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(body.isActive, experimentId).run();
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_logs (id, admin_user_id, action_type, old_value, new_value, details)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          'experiment_status_change',
+          body.isActive ? 'inactive' : 'active',
+          body.isActive ? 'active' : 'inactive',
+          JSON.stringify({ experiment_id: experimentId })
+        ).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error updating experiment status:", error);
+        return jsonResponse({ error: "Failed to update experiment status" }, 500);
+      }
+    }
+
+    // Update experiment notes (admin only)
+    if (pathname.match(/^\/api\/admin\/experiments\/([^\/]+)\/notes$/) && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const experimentId = pathname.split('/')[4];
+      const body = await request.json() as { notes: string };
+
+      try {
+        await env.DB.prepare(`
+          UPDATE experiments 
+          SET admin_notes = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(body.notes, experimentId).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error updating experiment notes:", error);
+        return jsonResponse({ error: "Failed to update experiment notes" }, 500);
+      }
+    }
+
+    // Get experiment stats (admin only)
+    if (pathname.match(/^\/api\/admin\/experiments\/([^\/]+)\/stats$/) && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const experimentId = pathname.split('/')[4];
+
+      try {
+        // Get experiment details
+        const experiment = await env.DB.prepare(`
+          SELECT * FROM experiments WHERE id = ?
+        `).bind(experimentId).first();
+
+        if (!experiment) {
+          return jsonResponse({ error: "Experiment not found" }, 404);
+        }
+
+        const variants = JSON.parse(experiment.variants);
+
+        // Get user counts per variant
+        const userCounts = await env.DB.prepare(`
+          SELECT variant, COUNT(*) as user_count
+          FROM user_experiments
+          WHERE experiment_id = ?
+          GROUP BY variant
+        `).bind(experimentId).all();
+
+        // Get conversion events per variant
+        const conversionEvents = await env.DB.prepare(`
+          SELECT variant, event_type, COUNT(*) as count
+          FROM experiment_events
+          WHERE experiment_id = ? AND event_type IN ('signup_completed', 'upgrade_clicked')
+          GROUP BY variant, event_type
+        `).bind(experimentId).all();
+
+        // Get CTA tracking per variant
+        const ctaEvents = await env.DB.prepare(`
+          SELECT variant, cta_type, COUNT(*) as count
+          FROM cta_tracking
+          WHERE experiment_id = ?
+          GROUP BY variant, cta_type
+        `).bind(experimentId).all();
+
+        // Calculate conversion rates
+        const stats = variants.map((variant: string) => {
+          const userCount = userCounts.results.find((u: any) => u.variant === variant)?.user_count || 0;
+          const signupCount = conversionEvents.results.find((e: any) => e.variant === variant && e.event_type === 'signup_completed')?.count || 0;
+          const upgradeCount = conversionEvents.results.find((e: any) => e.variant === variant && e.event_type === 'upgrade_clicked')?.count || 0;
+          const ctaCount = ctaEvents.results.find((e: any) => e.variant === variant && e.cta_type === 'pricing_upgrade')?.count || 0;
+
+          return {
+            variant,
+            user_count: userCount,
+            signup_count: signupCount,
+            upgrade_count: upgradeCount,
+            cta_count: ctaCount,
+            signup_rate: userCount > 0 ? (signupCount / userCount * 100).toFixed(2) : '0.00',
+            upgrade_rate: userCount > 0 ? (upgradeCount / userCount * 100).toFixed(2) : '0.00',
+            cta_rate: userCount > 0 ? (ctaCount / userCount * 100).toFixed(2) : '0.00'
+          };
+        });
+
+        return jsonResponse({
+          experiment,
+          stats,
+          total_users: userCounts.results.reduce((sum: number, u: any) => sum + u.user_count, 0)
+        });
+      } catch (error) {
+        console.error("Error fetching experiment stats:", error);
+        return jsonResponse({ error: "Failed to fetch experiment stats" }, 500);
+      }
+    }
+
+    // Get admin audit logs with filtering and pagination (admin only)
+    if (pathname === "/api/admin/audit-logs" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const url = new URL(request.url);
+        const actionType = url.searchParams.get('actionType');
+        const adminUserId = url.searchParams.get('adminUserId');
+        const targetUserId = url.searchParams.get('targetUserId');
+        const startDate = url.searchParams.get('startDate');
+        const endDate = url.searchParams.get('endDate');
+        const page = parseInt(url.searchParams.get('page') || '1');
+        const pageSize = 50;
+        const offset = (page - 1) * pageSize;
+
+        // Build WHERE clause
+        const whereConditions = [];
+        const params = [];
+
+        if (actionType) {
+          whereConditions.push('action_type = ?');
+          params.push(actionType);
+        }
+        if (adminUserId) {
+          whereConditions.push('admin_user_id = ?');
+          params.push(adminUserId);
+        }
+        if (targetUserId) {
+          whereConditions.push('target_user_id = ?');
+          params.push(targetUserId);
+        }
+        if (startDate) {
+          whereConditions.push('created_at >= ?');
+          params.push(startDate);
+        }
+        if (endDate) {
+          whereConditions.push('created_at <= ?');
+          params.push(endDate);
+        }
+
+        const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+
+        // Get total count
+        const countQuery = `SELECT COUNT(*) as total FROM admin_audit_logs ${whereClause}`;
+        const countResult = await env.DB.prepare(countQuery).bind(...params).first();
+        const total = countResult?.total || 0;
+
+        // Get paginated results
+        const query = `
+          SELECT 
+            al.*,
+            admin.name as admin_name,
+            admin.email as admin_email,
+            target.name as target_name,
+            target.email as target_email
+          FROM admin_audit_logs al
+          LEFT JOIN users admin ON al.admin_user_id = admin.id
+          LEFT JOIN users target ON al.target_user_id = target.id
+          ${whereClause}
+          ORDER BY al.created_at DESC
+          LIMIT ? OFFSET ?
+        `;
+
+        const logs = await env.DB.prepare(query).bind(...params, pageSize, offset).all();
+
+        return jsonResponse({
+          logs: logs.results,
+          pagination: {
+            page,
+            pageSize,
+            total,
+            totalPages: Math.ceil(total / pageSize)
+          }
+        });
+      } catch (error) {
+        console.error("Error fetching audit logs:", error);
+        return jsonResponse({ error: "Failed to fetch audit logs" }, 500);
+      }
+    }
+
+    // Export audit logs as CSV (admin only)
+    if (pathname === "/api/admin/audit-logs/export" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const url = new URL(request.url);
+        const actionType = url.searchParams.get('actionType');
+        const adminUserId = url.searchParams.get('adminUserId');
+        const targetUserId = url.searchParams.get('targetUserId');
+        const startDate = url.searchParams.get('startDate');
+        const endDate = url.searchParams.get('endDate');
+
+        // Build WHERE clause (same as above)
+        const whereConditions = [];
+        const params = [];
+
+        if (actionType) {
+          whereConditions.push('action_type = ?');
+          params.push(actionType);
+        }
+        if (adminUserId) {
+          whereConditions.push('admin_user_id = ?');
+          params.push(adminUserId);
+        }
+        if (targetUserId) {
+          whereConditions.push('target_user_id = ?');
+          params.push(targetUserId);
+        }
+        if (startDate) {
+          whereConditions.push('created_at >= ?');
+          params.push(startDate);
+        }
+        if (endDate) {
+          whereConditions.push('created_at <= ?');
+          params.push(endDate);
+        }
+
+        const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+
+        const query = `
+          SELECT 
+            al.*,
+            admin.name as admin_name,
+            admin.email as admin_email,
+            target.name as target_name,
+            target.email as target_email
+          FROM admin_audit_logs al
+          LEFT JOIN users admin ON al.admin_user_id = admin.id
+          LEFT JOIN users target ON al.target_user_id = target.id
+          ${whereClause}
+          ORDER BY al.created_at DESC
+        `;
+
+        const logs = await env.DB.prepare(query).bind(...params).all();
+
+        // Convert to CSV
+        const csvHeaders = ['Date', 'Admin', 'Action', 'Target User', 'Old Value', 'New Value', 'Details'];
+        const csvRows = logs.results.map((log: any) => [
+          log.created_at,
+          log.admin_name || log.admin_email || 'Unknown',
+          log.action_type,
+          log.target_name || log.target_email || 'N/A',
+          log.old_value || 'N/A',
+          log.new_value || 'N/A',
+          log.details || 'N/A'
+        ]);
+
+        const csvContent = [csvHeaders, ...csvRows]
+          .map(row => row.map(cell => `"${cell}"`).join(','))
+          .join('\n');
+
+        return new Response(csvContent, {
+          headers: {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': 'attachment; filename="audit-logs.csv"'
+          }
+        });
+      } catch (error) {
+        console.error("Error exporting audit logs:", error);
+        return jsonResponse({ error: "Failed to export audit logs" }, 500);
+      }
+    }
+
+    // Get retention cohort data (admin only)
+    if (pathname === "/api/admin/analytics/cohorts" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const url = new URL(request.url);
+        const timeFilter = url.searchParams.get('timeFilter') || '30d';
+        
+        let daysBack = 30;
+        switch (timeFilter) {
+          case '7d':
+            daysBack = 7;
+            break;
+          case '90d':
+            daysBack = 90;
+            break;
+          default:
+            daysBack = 30;
+        }
+
+        // Get cohort data
+        const cohortData = await env.DB.prepare(`
+          SELECT 
+            DATE(u.created_at) as cohort_date,
+            COUNT(DISTINCT u.id) as total_users,
+            COUNT(DISTINCT CASE WHEN ca.user_id IS NOT NULL THEN u.id END) as returning_users
+          FROM users u
+          LEFT JOIN cohort_activity ca ON u.id = ca.user_id 
+            AND ca.activity_date > DATE(u.created_at)
+            AND ca.activity_date <= DATE(u.created_at, '+${daysBack} days')
+          WHERE u.created_at >= datetime('now', '-${daysBack} days')
+          GROUP BY DATE(u.created_at)
+          ORDER BY cohort_date DESC
+        `).all();
+
+        // Calculate retention rates
+        const cohorts = cohortData.results.map((cohort: any) => ({
+          ...cohort,
+          retention_rate: cohort.total_users > 0 ? 
+            ((cohort.returning_users / cohort.total_users) * 100).toFixed(2) : '0.00'
+        }));
+
+        return jsonResponse({ cohorts, timeFilter });
+      } catch (error) {
+        console.error("Error fetching cohort data:", error);
+        return jsonResponse({ error: "Failed to fetch cohort data" }, 500);
+      }
+    }
+
+    // Get AI assistant usage stats (admin only)
+    if (pathname === "/api/admin/analytics/ai-usage" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const url = new URL(request.url);
+        const timeFilter = url.searchParams.get('timeFilter') || '30d';
+        
+        let dateFilter = '';
+        switch (timeFilter) {
+          case '7d':
+            dateFilter = "AND created_at > datetime('now', '-7 days')";
+            break;
+          case '90d':
+            dateFilter = "AND created_at > datetime('now', '-90 days')";
+            break;
+          default:
+            dateFilter = "AND created_at > datetime('now', '-30 days')";
+        }
+
+        // Get AI usage by action type
+        const usageByAction = await env.DB.prepare(`
+          SELECT 
+            action_type,
+            COUNT(*) as count,
+            COUNT(DISTINCT user_id) as unique_users
+          FROM ai_assistant_usage
+          WHERE 1=1 ${dateFilter}
+          GROUP BY action_type
+          ORDER BY count DESC
+        `).all();
+
+        // Get daily AI usage
+        const dailyUsage = await env.DB.prepare(`
+          SELECT 
+            DATE(created_at) as date,
+            COUNT(*) as total_actions,
+            COUNT(DISTINCT user_id) as unique_users
+          FROM ai_assistant_usage
+          WHERE 1=1 ${dateFilter}
+          GROUP BY DATE(created_at)
+          ORDER BY date DESC
+        `).all();
+
+        return jsonResponse({
+          usageByAction: usageByAction.results,
+          dailyUsage: dailyUsage.results,
+          timeFilter
+        });
+      } catch (error) {
+        console.error("Error fetching AI usage stats:", error);
+        return jsonResponse({ error: "Failed to fetch AI usage stats" }, 500);
+      }
+    }
+
+    // Get referral conversion data (admin only)
+    if (pathname === "/api/admin/analytics/referral-conversion" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const url = new URL(request.url);
+        const timeFilter = url.searchParams.get('timeFilter') || '30d';
+        
+        let dateFilter = '';
+        switch (timeFilter) {
+          case '7d':
+            dateFilter = "AND ru.created_at > datetime('now', '-7 days')";
+            break;
+          case '90d':
+            dateFilter = "AND ru.created_at > datetime('now', '-90 days')";
+            break;
+          default:
+            dateFilter = "AND ru.created_at > datetime('now', '-30 days')";
+        }
+
+        // Get referral conversion stats
+        const conversionStats = await env.DB.prepare(`
+          SELECT 
+            rc.code as referral_code,
+            u.name as referrer_name,
+            COUNT(ru.id) as total_referrals,
+            COUNT(DISTINCT ru.referred_user_id) as successful_conversions,
+            AVG(dc.amount) as avg_credit_amount
+          FROM referral_codes rc
+          JOIN users u ON rc.user_id = u.id
+          LEFT JOIN referral_usage ru ON rc.id = ru.referral_code_id ${dateFilter}
+          LEFT JOIN discount_credits dc ON ru.discount_credit_id = dc.id
+          GROUP BY rc.id
+          HAVING total_referrals > 0
+          ORDER BY successful_conversions DESC
+        `).all();
+
+        // Get daily conversion rates
+        const dailyConversions = await env.DB.prepare(`
+          SELECT 
+            DATE(ru.created_at) as date,
+            COUNT(ru.id) as total_referrals,
+            COUNT(DISTINCT ru.referred_user_id) as successful_conversions
+          FROM referral_usage ru
+          WHERE 1=1 ${dateFilter}
+          GROUP BY DATE(ru.created_at)
+          ORDER BY date DESC
+        `).all();
+
+        return jsonResponse({
+          conversionStats: conversionStats.results,
+          dailyConversions: dailyConversions.results,
+          timeFilter
+        });
+      } catch (error) {
+        console.error("Error fetching referral conversion data:", error);
+        return jsonResponse({ error: "Failed to fetch referral conversion data" }, 500);
+      }
+    }
+
+    // Update feedback public status (admin only)
+    if (pathname.match(/^\/api\/admin\/feedback\/([^\/]+)\/public$/) && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const feedbackId = pathname.split('/')[4];
+      const body = await request.json() as { isPublic: boolean };
+
+      try {
+        await env.DB.prepare(`
+          UPDATE feedback 
+          SET is_public = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(body.isPublic, feedbackId).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error updating feedback public status:", error);
+        return jsonResponse({ error: "Failed to update feedback status" }, 500);
+      }
+    }
+
+    // Update feedback admin comment (admin only)
+    if (pathname.match(/^\/api\/admin\/feedback\/([^\/]+)\/comment$/) && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const feedbackId = pathname.split('/')[4];
+      const body = await request.json() as { comment: string };
+
+      try {
+        await env.DB.prepare(`
+          UPDATE feedback 
+          SET admin_comment = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(body.comment, feedbackId).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error updating feedback comment:", error);
+        return jsonResponse({ error: "Failed to update feedback comment" }, 500);
+      }
+    }
+
+    // Get public feature requests (public endpoint)
+    if (pathname === "/api/feature-requests" && request.method === "GET") {
+      try {
+        const url = new URL(request.url);
+        const page = parseInt(url.searchParams.get('page') || '1');
+        const pageSize = 20;
+        const offset = (page - 1) * pageSize;
+
+        // Get total count
+        const countResult = await env.DB.prepare(`
+          SELECT COUNT(*) as total FROM feedback WHERE is_public = TRUE
+        `).first();
+        const total = countResult?.total || 0;
+
+        // Get paginated public feedback
+        const feedback = await env.DB.prepare(`
+          SELECT 
+            id, category, subject, description, created_at
+          FROM feedback 
+          WHERE is_public = TRUE
+          ORDER BY created_at DESC
+          LIMIT ? OFFSET ?
+        `).bind(pageSize, offset).all();
+
+        return jsonResponse({
+          feedback: feedback.results,
+          pagination: {
+            page,
+            pageSize,
+            total,
+            totalPages: Math.ceil(total / pageSize)
+          }
+        });
+      } catch (error) {
+        console.error("Error fetching public feature requests:", error);
+        return jsonResponse({ error: "Failed to fetch feature requests" }, 500);
+      }
+    }
+
+    // Get social post drafts (admin only)
+    if (pathname === "/api/admin/social-drafts" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const drafts = await env.DB.prepare(`
+          SELECT * FROM social_post_drafts 
+          ORDER BY platform, created_at DESC
+        `).all();
+
+        return jsonResponse({ drafts: drafts.results });
+      } catch (error) {
+        console.error("Error fetching social drafts:", error);
+        return jsonResponse({ error: "Failed to fetch social drafts" }, 500);
+      }
+    }
+
+    // Update social post draft (admin only)
+    if (pathname.match(/^\/api\/admin\/social-drafts\/([^\/]+)$/) && request.method === "PUT") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const draftId = pathname.split('/')[4];
+      const body = await request.json() as {
+        title?: string;
+        content: string;
+        status?: string;
+        scheduledAt?: string;
+      };
+
+      try {
+        const updates = [];
+        const values = [];
+        
+        if (body.title !== undefined) {
+          updates.push('title = ?');
+          values.push(body.title);
+        }
+        if (body.content !== undefined) {
+          updates.push('content = ?');
+          values.push(body.content);
+        }
+        if (body.status !== undefined) {
+          updates.push('status = ?');
+          values.push(body.status);
+        }
+        if (body.scheduledAt !== undefined) {
+          updates.push('scheduled_at = ?');
+          values.push(body.scheduledAt);
+        }
+
+        if (updates.length === 0) {
+          return jsonResponse({ error: "No fields to update" }, 400);
+        }
+
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(draftId);
+
+        await env.DB.prepare(`
+          UPDATE social_post_drafts 
+          SET ${updates.join(', ')}
+          WHERE id = ?
+        `).bind(...values).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error updating social draft:", error);
+        return jsonResponse({ error: "Failed to update social draft" }, 500);
+      }
+    }
+
+    // Track CTA clicks
+    if (pathname === "/api/track/cta" && request.method === "POST") {
+      try {
+        const body = await request.json() as {
+          ctaType: string;
+          ctaLocation: string;
+          experimentId?: string;
+          variant?: string;
+          sessionId?: string;
+        };
+
+        const userId = getCurrentUserId(request);
+
+        if (!body.ctaType || !body.ctaLocation) {
+          return jsonResponse({ error: "Missing required fields" }, 400);
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO cta_tracking (id, user_id, cta_type, cta_location, experiment_id, variant, session_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId || null,
+          body.ctaType,
+          body.ctaLocation,
+          body.experimentId || null,
+          body.variant || null,
+          body.sessionId || null
+        ).run();
+
+        // If this is part of an experiment, also log as experiment event
+        if (body.experimentId && userId) {
+          await env.DB.prepare(`
+            INSERT INTO experiment_events (id, user_id, experiment_id, variant, event_type, event_data)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).bind(
+            crypto.randomUUID(),
+            userId,
+            body.experimentId,
+            body.variant || 'A',
+            'cta_clicked',
+            JSON.stringify({ cta_type: body.ctaType, cta_location: body.ctaLocation })
+          ).run();
+        }
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error tracking CTA:", error);
+        return jsonResponse({ error: "Failed to track CTA" }, 500);
+      }
+    }
+
+    // Track Product Hunt interactions
+    if (pathname === "/api/track/product-hunt" && request.method === "POST") {
+      try {
+        const body = await request.json() as {
+          actionType: string;
+          sessionId?: string;
+        };
+
+        const userId = getCurrentUserId(request);
+
+        if (!body.actionType) {
+          return jsonResponse({ error: "Missing action type" }, 400);
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO product_hunt_tracking (id, user_id, action_type, session_id)
+          VALUES (?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId || null,
+          body.actionType,
+          body.sessionId || null
+        ).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error tracking Product Hunt interaction:", error);
+        return jsonResponse({ error: "Failed to track interaction" }, 500);
+      }
+    }
+
+    // Get Product Hunt stats (admin only)
+    if (pathname === "/api/admin/product-hunt/stats" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const url = new URL(request.url);
+        const timeFilter = url.searchParams.get('timeFilter') || '7d';
+        
+        let dateFilter = '';
+        switch (timeFilter) {
+          case '30d':
+            dateFilter = "AND created_at > datetime('now', '-30 days')";
+            break;
+          case '90d':
+            dateFilter = "AND created_at > datetime('now', '-90 days')";
+            break;
+          default:
+            dateFilter = "AND created_at > datetime('now', '-7 days')";
+        }
+
+        // Get action counts
+        const actionStats = await env.DB.prepare(`
+          SELECT 
+            action_type,
+            COUNT(*) as count,
+            COUNT(DISTINCT user_id) as unique_users
+          FROM product_hunt_tracking
+          WHERE 1=1 ${dateFilter}
+          GROUP BY action_type
+          ORDER BY count DESC
+        `).all();
+
+        // Get daily activity
+        const dailyActivity = await env.DB.prepare(`
+          SELECT 
+            DATE(created_at) as date,
+            COUNT(*) as total_actions,
+            COUNT(DISTINCT user_id) as unique_users
+          FROM product_hunt_tracking
+          WHERE 1=1 ${dateFilter}
+          GROUP BY DATE(created_at)
+          ORDER BY date DESC
+        `).all();
+
+        return jsonResponse({
+          actionStats: actionStats.results,
+          dailyActivity: dailyActivity.results,
+          timeFilter
+        });
+      } catch (error) {
+        console.error("Error fetching Product Hunt stats:", error);
+        return jsonResponse({ error: "Failed to fetch Product Hunt stats" }, 500);
+      }
+    }
+
     return new Response("Not Found", { status: 404 });
   }
 }

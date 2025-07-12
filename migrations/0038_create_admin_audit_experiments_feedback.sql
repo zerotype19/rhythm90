@@ -113,6 +113,6 @@ INSERT OR IGNORE INTO experiments (id, name, description, variants) VALUES
 ('pricing_experiment', 'Pricing Page A/B Test', 'Test different pricing page layouts and CTAs', '["A", "B"]'),
 ('signup_experiment', 'Signup Flow A/B Test', 'Test signup flow with and without email opt-in', '["A", "B"]');
 
--- Insert default system announcement
-INSERT OR IGNORE INTO system_announcements (id, title, message, type, created_by) VALUES
-('welcome_announcement', 'Welcome to Rhythm90!', 'We''re excited to have you here. Check out our new features and let us know what you think!', 'info', 'system'); 
+-- Insert default system announcement (will be updated with actual user ID later)
+-- INSERT OR IGNORE INTO system_announcements (id, title, message, type, created_by) VALUES
+-- ('welcome_announcement', 'Welcome to Rhythm90!', 'We''re excited to have you here. Check out our new features and let us know what you think!', 'info', 'system'); 
