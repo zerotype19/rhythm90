@@ -124,6 +124,53 @@ interface SystemHealth {
   };
 }
 
+interface Feedback {
+  id: string;
+  user_id: string | null;
+  user_email: string | null;
+  user_name: string | null;
+  category: string;
+  subject: string;
+  description: string;
+  status: string;
+  priority: string;
+  assigned_to: string | null;
+  assigned_to_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface DashboardMetrics {
+  activeTeams: number;
+  aiUsage: number;
+  referralActivity: number;
+  northStarMetric: number;
+  dailyBreakdown: Array<{
+    date: string;
+    active_users: number;
+    total_events: number;
+  }>;
+  timeFilter: string;
+}
+
+interface Experiment {
+  id: string;
+  name: string;
+  description: string;
+  variants: string[];
+  is_active: boolean;
+  start_date: string;
+  end_date: string | null;
+}
+
+interface ExperimentStats {
+  experiment_id: string;
+  variant: string;
+  user_count: number;
+  conversion_rate: number;
+  engagement_rate: number;
+}
+
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('users');
@@ -135,6 +182,10 @@ export default function AdminDashboard() {
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
   const [webhookStats, setWebhookStats] = useState<WebhookStats | null>(null);
   const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
+  const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
+  const [experiments, setExperiments] = useState<Experiment[]>([]);
+  const [experimentStats, setExperimentStats] = useState<ExperimentStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
@@ -241,6 +292,68 @@ export default function AdminDashboard() {
     return new Date(dateString).toLocaleDateString();
   };
 
+  // Admin control functions
+  const setUserPremium = async (userId: string, isPremium: boolean) => {
+    try {
+      const endpoint = isPremium ? 'set-premium' : 'remove-premium';
+      const response = await fetch(`/api/admin/users/${userId}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (response.ok) {
+        await loadData(); // Refresh data
+      } else {
+        alert('Failed to update premium status');
+      }
+    } catch (error) {
+      console.error('Error updating premium status:', error);
+      alert('Error updating premium status');
+    }
+  };
+
+  const setUserRole = async (userId: string, role: string) => {
+    if (!confirm(`Are you sure you want to change this user's role to ${role}?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/set-role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role })
+      });
+      
+      if (response.ok) {
+        await loadData(); // Refresh data
+      } else {
+        alert('Failed to update user role');
+      }
+    } catch (error) {
+      console.error('Error updating user role:', error);
+      alert('Error updating user role');
+    }
+  };
+
+  const updateFeedbackStatus = async (feedbackId: string, status: string) => {
+    try {
+      const response = await fetch(`/api/admin/feedback/${feedbackId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      
+      if (response.ok) {
+        await loadData(); // Refresh data
+      } else {
+        alert('Failed to update feedback status');
+      }
+    } catch (error) {
+      console.error('Error updating feedback status:', error);
+      alert('Error updating feedback status');
+    }
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -297,7 +410,7 @@ export default function AdminDashboard() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-8">
+        <TabsList className="grid w-full grid-cols-11">
           <TabsTrigger value="users">Users ({users.length})</TabsTrigger>
           <TabsTrigger value="teams">Teams ({teams.length})</TabsTrigger>
           <TabsTrigger value="plays">Plays ({plays.length})</TabsTrigger>
@@ -306,6 +419,9 @@ export default function AdminDashboard() {
           <TabsTrigger value="webhooks">Webhooks ({webhookLogs.length})</TabsTrigger>
           <TabsTrigger value="growth">Growth Toolkit</TabsTrigger>
           <TabsTrigger value="system">System Health</TabsTrigger>
+          <TabsTrigger value="feedback">Feedback ({feedback.length})</TabsTrigger>
+          <TabsTrigger value="experiments">Experiments</TabsTrigger>
+          <TabsTrigger value="dashboard">Data & Signal Dashboard</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -396,13 +512,29 @@ export default function AdminDashboard() {
                     </TableCell>
                     <TableCell>{formatDate(user.created_at)}</TableCell>
                     <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleUserStatus(user.id, !user.is_active)}
-                      >
-                        {user.is_active ? 'Deactivate' : 'Activate'}
-                      </Button>
+                      <div className="flex flex-col space-y-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleUserStatus(user.id, !user.is_active)}
+                        >
+                          {user.is_active ? 'Deactivate' : 'Activate'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setUserPremium(user.id, !user.is_premium)}
+                        >
+                          {user.is_premium ? 'Remove Premium' : 'Set Premium'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setUserRole(user.id, user.role === 'admin' ? 'user' : 'admin')}
+                        >
+                          {user.role === 'admin' ? 'Demote to User' : 'Promote to Admin'}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1072,6 +1204,255 @@ export default function AdminDashboard() {
                     }
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="feedback" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Feedback Inbox</h2>
+            <div className="flex space-x-2">
+              <select 
+                className="px-3 py-2 border border-input bg-background rounded-md text-sm"
+                onChange={(e) => {
+                  // TODO: Add filtering by status
+                }}
+              >
+                <option value="">All Status</option>
+                <option value="new">New</option>
+                <option value="in_progress">In Progress</option>
+                <option value="resolved">Resolved</option>
+              </select>
+            </div>
+          </div>
+          
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {feedback.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <div className="text-sm">
+                        <div className="font-medium">{item.user_name || item.user_email || 'Anonymous'}</div>
+                        {item.user_email && <div className="text-muted-foreground">{item.user_email}</div>}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={
+                        item.category === 'bug_report' ? 'destructive' :
+                        item.category === 'feature_request' ? 'default' : 'secondary'
+                      }>
+                        {item.category.replace('_', ' ')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-md truncate">
+                      {item.subject}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={
+                        item.status === 'new' ? 'default' :
+                        item.status === 'in_progress' ? 'secondary' : 'outline'
+                      }>
+                        {item.status.replace('_', ' ')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={
+                        item.priority === 'critical' ? 'destructive' :
+                        item.priority === 'high' ? 'default' :
+                        item.priority === 'medium' ? 'secondary' : 'outline'
+                      }>
+                        {item.priority}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatDate(item.created_at)}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col space-y-1">
+                        <select
+                          className="px-2 py-1 text-xs border border-input bg-background rounded"
+                          value={item.status}
+                          onChange={(e) => updateFeedbackStatus(item.id, e.target.value)}
+                        >
+                          <option value="new">New</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="resolved">Resolved</option>
+                        </select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            // TODO: Add view details modal
+                            alert(`Feedback: ${item.subject}\n\n${item.description}`);
+                          }}
+                        >
+                          View Details
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="experiments" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">A/B Experiments</h2>
+            <Button
+              variant="outline"
+              onClick={() => {
+                // TODO: Add create experiment modal
+                alert('Create experiment functionality coming soon');
+              }}
+            >
+              Create Experiment
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {experiments.map((experiment) => (
+              <Card key={experiment.id}>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    {experiment.name}
+                    <Badge variant={experiment.is_active ? 'default' : 'secondary'}>
+                      {experiment.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-4">{experiment.description}</p>
+                  
+                  <div className="space-y-2">
+                    <div className="text-sm">
+                      <span className="font-medium">Variants:</span> {experiment.variants.join(', ')}
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-medium">Start Date:</span> {formatDate(experiment.start_date)}
+                    </div>
+                    {experiment.end_date && (
+                      <div className="text-sm">
+                        <span className="font-medium">End Date:</span> {formatDate(experiment.end_date)}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // TODO: Add experiment stats modal
+                        alert(`Experiment stats for ${experiment.name} coming soon`);
+                      }}
+                    >
+                      View Stats
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="dashboard" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Data & Signal Dashboard</h2>
+            <div className="flex space-x-2">
+              <select 
+                className="px-3 py-2 border border-input bg-background rounded-md text-sm"
+                value={dashboardMetrics?.timeFilter || '7d'}
+                onChange={(e) => {
+                  // TODO: Load metrics with new time filter
+                }}
+              >
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+              </select>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const timeFilter = dashboardMetrics?.timeFilter || '7d';
+                  window.open(`/api/admin/dashboard/export?timeFilter=${timeFilter}`, '_blank');
+                }}
+              >
+                Export CSV
+              </Button>
+            </div>
+          </div>
+          
+          {/* Key Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Active Teams</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{dashboardMetrics?.activeTeams || 0}</div>
+                <p className="text-xs text-muted-foreground">Teams with activity</p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">AI Assistant Usage</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{dashboardMetrics?.aiUsage || 0}</div>
+                <p className="text-xs text-muted-foreground">AI interactions</p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Referral Activity</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{dashboardMetrics?.referralActivity || 0}</div>
+                <p className="text-xs text-muted-foreground">Referral conversions</p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">North Star Metric</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{dashboardMetrics?.northStarMetric || 0}</div>
+                <p className="text-xs text-muted-foreground">Teams with &gt;1 play + signals</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Daily Breakdown Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Daily Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {dashboardMetrics?.dailyBreakdown.map((day) => (
+                  <div key={day.date} className="flex items-center justify-between p-2 border rounded">
+                    <div className="text-sm font-medium">{day.date}</div>
+                    <div className="flex space-x-4 text-sm text-muted-foreground">
+                      <span>{day.active_users} active users</span>
+                      <span>{day.total_events} total events</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

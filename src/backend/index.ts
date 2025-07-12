@@ -169,6 +169,45 @@ function errorResponse(message: string, status: number = 400): Response {
   return jsonResponse({ success: false, message }, status);
 }
 
+// Sentry integration (feature-flagged)
+async function initSentry(env: Env) {
+  if (env.SENTRY_DSN) {
+    try {
+      // Initialize Sentry for error tracking
+      console.log('Initializing Sentry error tracking...');
+      
+      // Set up global error handler
+      process.on('uncaughtException', (error) => {
+        console.error('Uncaught Exception:', error);
+        // TODO: Send to Sentry when integration is complete
+      });
+
+      process.on('unhandledRejection', (reason, promise) => {
+        console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+        // TODO: Send to Sentry when integration is complete
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize Sentry:', error);
+      return false;
+    }
+  }
+  return false;
+}
+
+// Helper function to capture errors with Sentry
+async function captureError(env: Env, error: Error, context?: any) {
+  if (env.SENTRY_DSN) {
+    try {
+      // TODO: Implement Sentry error capture
+      console.error('Sentry Error:', error.message, context);
+    } catch (sentryError) {
+      console.error('Failed to capture error in Sentry:', sentryError);
+    }
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -5897,6 +5936,623 @@ export default {
       } catch (error) {
         console.error("Error in email signup:", error);
         return jsonResponse({ error: "Failed to process email signup" }, 500);
+      }
+    }
+
+    // Admin account controls - Set user premium status
+    if (pathname.match(/^\/api\/admin\/users\/([^\/]+)\/set-premium$/) && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const targetUserId = pathname.split('/')[4];
+      
+      try {
+        // Get current user and team info
+        const user = await env.DB.prepare(`SELECT is_premium, team_id FROM users WHERE id = ?`).bind(targetUserId).first();
+        if (!user) {
+          return jsonResponse({ error: "User not found" }, 404);
+        }
+
+        const oldValue = user.is_premium ? 'true' : 'false';
+        
+        // Update user premium status
+        await env.DB.prepare(`UPDATE users SET is_premium = TRUE WHERE id = ?`).bind(targetUserId).run();
+        
+        // Update team premium status if user has a team
+        if (user.team_id) {
+          await env.DB.prepare(`UPDATE teams SET is_premium = TRUE WHERE id = ?`).bind(user.team_id).run();
+        }
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_logs (id, admin_user_id, action_type, target_user_id, target_team_id, old_value, new_value, details)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          'premium_toggle',
+          targetUserId,
+          user.team_id || null,
+          oldValue,
+          'true',
+          JSON.stringify({ action: 'set_premium' })
+        ).run();
+
+        return jsonResponse({ success: true, message: "User premium status set successfully" });
+      } catch (error) {
+        console.error("Error setting user premium status:", error);
+        return jsonResponse({ error: "Failed to set premium status" }, 500);
+      }
+    }
+
+    // Admin account controls - Remove user premium status
+    if (pathname.match(/^\/api\/admin\/users\/([^\/]+)\/remove-premium$/) && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const targetUserId = pathname.split('/')[4];
+      
+      try {
+        // Get current user and team info
+        const user = await env.DB.prepare(`SELECT is_premium, team_id FROM users WHERE id = ?`).bind(targetUserId).first();
+        if (!user) {
+          return jsonResponse({ error: "User not found" }, 404);
+        }
+
+        const oldValue = user.is_premium ? 'true' : 'false';
+        
+        // Update user premium status
+        await env.DB.prepare(`UPDATE users SET is_premium = FALSE WHERE id = ?`).bind(targetUserId).run();
+        
+        // Update team premium status if user has a team
+        if (user.team_id) {
+          await env.DB.prepare(`UPDATE teams SET is_premium = FALSE WHERE id = ?`).bind(user.team_id).run();
+        }
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_logs (id, admin_user_id, action_type, target_user_id, target_team_id, old_value, new_value, details)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          'premium_toggle',
+          targetUserId,
+          user.team_id || null,
+          oldValue,
+          'false',
+          JSON.stringify({ action: 'remove_premium' })
+        ).run();
+
+        return jsonResponse({ success: true, message: "User premium status removed successfully" });
+      } catch (error) {
+        console.error("Error removing user premium status:", error);
+        return jsonResponse({ error: "Failed to remove premium status" }, 500);
+      }
+    }
+
+    // Admin account controls - Set user role
+    if (pathname.match(/^\/api\/admin\/users\/([^\/]+)\/set-role$/) && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const targetUserId = pathname.split('/')[4];
+      const body = await request.json() as { role: string };
+      
+      if (!body.role || !['user', 'admin'].includes(body.role)) {
+        return jsonResponse({ error: "Invalid role. Must be 'user' or 'admin'" }, 400);
+      }
+
+      try {
+        // Get current user role
+        const user = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUserId).first();
+        if (!user) {
+          return jsonResponse({ error: "User not found" }, 404);
+        }
+
+        const oldValue = user.role;
+        
+        // Update user role
+        await env.DB.prepare(`UPDATE users SET role = ? WHERE id = ?`).bind(body.role, targetUserId).run();
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_logs (id, admin_user_id, action_type, target_user_id, old_value, new_value, details)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          'role_change',
+          targetUserId,
+          oldValue,
+          body.role,
+          JSON.stringify({ action: 'set_role' })
+        ).run();
+
+        return jsonResponse({ success: true, message: "User role updated successfully" });
+      } catch (error) {
+        console.error("Error setting user role:", error);
+        return jsonResponse({ error: "Failed to update user role" }, 500);
+      }
+    }
+
+    // Experiment assignment helper
+    if (pathname === "/api/experiments/assign" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { experimentId: string };
+        
+        // Check if user is already assigned to this experiment
+        const existing = await env.DB.prepare(`
+          SELECT variant FROM user_experiments 
+          WHERE user_id = ? AND experiment_id = ?
+        `).bind(userId, body.experimentId).first();
+
+        if (existing) {
+          return jsonResponse({ variant: existing.variant });
+        }
+
+        // Get experiment details
+        const experiment = await env.DB.prepare(`
+          SELECT variants FROM experiments 
+          WHERE id = ? AND is_active = TRUE
+        `).bind(body.experimentId).first();
+
+        if (!experiment) {
+          return jsonResponse({ error: "Experiment not found or inactive" }, 404);
+        }
+
+        const variants = JSON.parse(experiment.variants);
+        const variant = variants[Math.floor(Math.random() * variants.length)];
+
+        // Assign user to variant
+        await env.DB.prepare(`
+          INSERT INTO user_experiments (id, user_id, experiment_id, variant)
+          VALUES (?, ?, ?, ?)
+        `).bind(crypto.randomUUID(), userId, body.experimentId, variant).run();
+
+        return jsonResponse({ variant });
+      } catch (error) {
+        console.error("Error assigning experiment:", error);
+        return jsonResponse({ error: "Failed to assign experiment" }, 500);
+      }
+    }
+
+    // Track experiment event
+    if (pathname === "/api/experiments/event" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { 
+          experimentId: string; 
+          eventType: string; 
+          eventData?: any;
+        };
+
+        // Get user's variant for this experiment
+        const assignment = await env.DB.prepare(`
+          SELECT variant FROM user_experiments 
+          WHERE user_id = ? AND experiment_id = ?
+        `).bind(userId, body.experimentId).first();
+
+        if (!assignment) {
+          return jsonResponse({ error: "User not assigned to experiment" }, 400);
+        }
+
+        // Log event
+        await env.DB.prepare(`
+          INSERT INTO experiment_events (id, user_id, experiment_id, variant, event_type, event_data)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          body.experimentId,
+          assignment.variant,
+          body.eventType,
+          body.eventData ? JSON.stringify(body.eventData) : null
+        ).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error tracking experiment event:", error);
+        return jsonResponse({ error: "Failed to track event" }, 500);
+      }
+    }
+
+    // Submit feedback
+    if (pathname === "/api/feedback" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      
+      try {
+        const body = await request.json() as {
+          category: string;
+          subject: string;
+          description: string;
+          userEmail?: string;
+        };
+
+        if (!body.category || !body.subject || !body.description) {
+          return jsonResponse({ error: "Missing required fields" }, 400);
+        }
+
+        if (!['bug_report', 'feature_request', 'general_feedback'].includes(body.category)) {
+          return jsonResponse({ error: "Invalid category" }, 400);
+        }
+
+        const feedbackId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO feedback (id, user_id, user_email, category, subject, description)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          feedbackId,
+          userId || null,
+          body.userEmail || null,
+          body.category,
+          body.subject,
+          body.description
+        ).run();
+
+        return jsonResponse({ success: true, feedbackId });
+      } catch (error) {
+        console.error("Error submitting feedback:", error);
+        return jsonResponse({ error: "Failed to submit feedback" }, 500);
+      }
+    }
+
+    // Get feedback (admin only)
+    if (pathname === "/api/admin/feedback" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const feedback = await env.DB.prepare(`
+          SELECT 
+            f.*,
+            u.name as user_name,
+            u.email as user_email,
+            a.name as assigned_to_name
+          FROM feedback f
+          LEFT JOIN users u ON f.user_id = u.id
+          LEFT JOIN users a ON f.assigned_to = a.id
+          ORDER BY f.created_at DESC
+        `).all();
+
+        return jsonResponse({ feedback: feedback.results });
+      } catch (error) {
+        console.error("Error fetching feedback:", error);
+        return jsonResponse({ error: "Failed to fetch feedback" }, 500);
+      }
+    }
+
+    // Update feedback status (admin only)
+    if (pathname.match(/^\/api\/admin\/feedback\/([^\/]+)\/status$/) && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const feedbackId = pathname.split('/')[4];
+      const body = await request.json() as { status: string; assignedTo?: string };
+
+      if (!['new', 'in_progress', 'resolved'].includes(body.status)) {
+        return jsonResponse({ error: "Invalid status" }, 400);
+      }
+
+      try {
+        await env.DB.prepare(`
+          UPDATE feedback 
+          SET status = ?, assigned_to = ?, resolved_at = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(
+          body.status,
+          body.assignedTo || null,
+          body.status === 'resolved' ? new Date().toISOString() : null,
+          feedbackId
+        ).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error updating feedback status:", error);
+        return jsonResponse({ error: "Failed to update feedback" }, 500);
+      }
+    }
+
+    // Data dashboard - North Star metrics
+    if (pathname === "/api/admin/dashboard/metrics" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const url = new URL(request.url);
+        const timeFilter = url.searchParams.get('timeFilter') || '7d';
+        
+        let dateFilter = '';
+        switch (timeFilter) {
+          case '7d':
+            dateFilter = "AND created_at > datetime('now', '-7 days')";
+            break;
+          case '30d':
+            dateFilter = "AND created_at > datetime('now', '-30 days')";
+            break;
+          default:
+            dateFilter = "AND created_at > datetime('now', '-7 days')";
+        }
+
+        // Active teams (teams with activity in the time period)
+        const activeTeams = await env.DB.prepare(`
+          SELECT COUNT(DISTINCT t.id) as count
+          FROM teams t
+          WHERE EXISTS (
+            SELECT 1 FROM plays p WHERE p.team_id = t.id ${dateFilter}
+            UNION
+            SELECT 1 FROM signals s JOIN plays p ON s.play_id = p.id WHERE p.team_id = t.id ${dateFilter}
+          )
+        `).first();
+
+        // AI assistant usage
+        const aiUsage = await env.DB.prepare(`
+          SELECT COUNT(*) as count
+          FROM analytics_events
+          WHERE event_type = 'ai_assistant_used' ${dateFilter}
+        `).first();
+
+        // Referral activity
+        const referralActivity = await env.DB.prepare(`
+          SELECT COUNT(*) as count
+          FROM referral_usage
+          WHERE created_at > datetime('now', '-${timeFilter === '7d' ? '7' : '30'} days')
+        `).first();
+
+        // North Star Metric: Teams with >1 play + signals logged
+        const northStarMetric = await env.DB.prepare(`
+          SELECT COUNT(DISTINCT t.id) as count
+          FROM teams t
+          WHERE EXISTS (
+            SELECT 1 FROM plays p WHERE p.team_id = t.id ${dateFilter}
+          )
+          AND EXISTS (
+            SELECT 1 FROM signals s 
+            JOIN plays p ON s.play_id = p.id 
+            WHERE p.team_id = t.id ${dateFilter}
+          )
+        `).first();
+
+        // Daily breakdown for the time period
+        const dailyBreakdown = await env.DB.prepare(`
+          SELECT 
+            DATE(created_at) as date,
+            COUNT(DISTINCT user_id) as active_users,
+            COUNT(*) as total_events
+          FROM analytics_events
+          WHERE created_at > datetime('now', '-${timeFilter === '7d' ? '7' : '30'} days')
+          GROUP BY DATE(created_at)
+          ORDER BY date DESC
+        `).all();
+
+        return jsonResponse({
+          activeTeams: activeTeams?.count || 0,
+          aiUsage: aiUsage?.count || 0,
+          referralActivity: referralActivity?.count || 0,
+          northStarMetric: northStarMetric?.count || 0,
+          dailyBreakdown: dailyBreakdown.results,
+          timeFilter
+        });
+      } catch (error) {
+        console.error("Error fetching dashboard metrics:", error);
+        return jsonResponse({ error: "Failed to fetch metrics" }, 500);
+      }
+    }
+
+    // Export metrics as CSV
+    if (pathname === "/api/admin/dashboard/export" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const url = new URL(request.url);
+        const timeFilter = url.searchParams.get('timeFilter') || '7d';
+        
+        let dateFilter = '';
+        switch (timeFilter) {
+          case '7d':
+            dateFilter = "AND created_at > datetime('now', '-7 days')";
+            break;
+          case '30d':
+            dateFilter = "AND created_at > datetime('now', '-30 days')";
+            break;
+          default:
+            dateFilter = "AND created_at > datetime('now', '-7 days')";
+        }
+
+        // Get detailed metrics for export
+        const metrics = await env.DB.prepare(`
+          SELECT 
+            t.name as team_name,
+            COUNT(DISTINCT p.id) as play_count,
+            COUNT(DISTINCT s.id) as signal_count,
+            COUNT(DISTINCT ae.user_id) as active_users,
+            t.is_premium,
+            t.created_at
+          FROM teams t
+          LEFT JOIN plays p ON t.id = p.team_id ${dateFilter}
+          LEFT JOIN signals s ON p.id = s.play_id ${dateFilter}
+          LEFT JOIN analytics_events ae ON t.id = ae.team_id ${dateFilter}
+          GROUP BY t.id
+          ORDER BY play_count DESC, signal_count DESC
+        `).all();
+
+        // Convert to CSV format
+        const csvHeaders = ['Team Name', 'Plays', 'Signals', 'Active Users', 'Premium', 'Created At'];
+        const csvRows = metrics.results.map((row: any) => [
+          row.team_name || 'Unknown',
+          row.play_count || 0,
+          row.signal_count || 0,
+          row.active_users || 0,
+          row.is_premium ? 'Yes' : 'No',
+          row.created_at || ''
+        ]);
+
+        const csvContent = [csvHeaders, ...csvRows]
+          .map(row => row.map(cell => `"${cell}"`).join(','))
+          .join('\n');
+
+        return new Response(csvContent, {
+          headers: {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': `attachment; filename="rhythm90-metrics-${timeFilter}.csv"`
+          }
+        });
+      } catch (error) {
+        console.error("Error exporting metrics:", error);
+        return jsonResponse({ error: "Failed to export metrics" }, 500);
+      }
+    }
+
+    // Get active system announcements
+    if (pathname === "/api/announcements" && request.method === "GET") {
+      try {
+        const announcements = await env.DB.prepare(`
+          SELECT * FROM system_announcements 
+          WHERE is_active = TRUE 
+          AND (end_date IS NULL OR end_date > CURRENT_TIMESTAMP)
+          ORDER BY created_at DESC
+        `).all();
+
+        return jsonResponse({ announcements: announcements.results });
+      } catch (error) {
+        console.error("Error fetching announcements:", error);
+        return jsonResponse({ error: "Failed to fetch announcements" }, 500);
+      }
+    }
+
+    // Create system announcement (admin only)
+    if (pathname === "/api/admin/announcements" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as {
+          title: string;
+          message: string;
+          type: string;
+          isDismissible: boolean;
+          endDate?: string;
+        };
+
+        if (!body.title || !body.message) {
+          return jsonResponse({ error: "Title and message are required" }, 400);
+        }
+
+        if (!['info', 'success', 'warning', 'error'].includes(body.type)) {
+          return jsonResponse({ error: "Invalid announcement type" }, 400);
+        }
+
+        const announcementId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO system_announcements (id, title, message, type, is_dismissible, end_date, created_by)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          announcementId,
+          body.title,
+          body.message,
+          body.type,
+          body.isDismissible,
+          body.endDate || null,
+          userId
+        ).run();
+
+        return jsonResponse({ success: true, announcementId });
+      } catch (error) {
+        console.error("Error creating announcement:", error);
+        return jsonResponse({ error: "Failed to create announcement" }, 500);
+      }
+    }
+
+    // Update system announcement (admin only)
+    if (pathname.match(/^\/api\/admin\/announcements\/([^\/]+)$/) && request.method === "PUT") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const announcementId = pathname.split('/')[4];
+      
+      try {
+        const body = await request.json() as {
+          title?: string;
+          message?: string;
+          type?: string;
+          isActive?: boolean;
+          isDismissible?: boolean;
+          endDate?: string;
+        };
+
+        const updates = [];
+        const values = [];
+        
+        if (body.title !== undefined) {
+          updates.push('title = ?');
+          values.push(body.title);
+        }
+        if (body.message !== undefined) {
+          updates.push('message = ?');
+          values.push(body.message);
+        }
+        if (body.type !== undefined) {
+          updates.push('type = ?');
+          values.push(body.type);
+        }
+        if (body.isActive !== undefined) {
+          updates.push('is_active = ?');
+          values.push(body.isActive);
+        }
+        if (body.isDismissible !== undefined) {
+          updates.push('is_dismissible = ?');
+          values.push(body.isDismissible);
+        }
+        if (body.endDate !== undefined) {
+          updates.push('end_date = ?');
+          values.push(body.endDate);
+        }
+
+        if (updates.length === 0) {
+          return jsonResponse({ error: "No fields to update" }, 400);
+        }
+
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(announcementId);
+
+        await env.DB.prepare(`
+          UPDATE system_announcements 
+          SET ${updates.join(', ')}
+          WHERE id = ?
+        `).bind(...values).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error updating announcement:", error);
+        return jsonResponse({ error: "Failed to update announcement" }, 500);
       }
     }
 
