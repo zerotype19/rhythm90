@@ -84,6 +84,35 @@ interface Analytics {
   }>;
 }
 
+interface WebhookLog {
+  id: string;
+  event_type: string;
+  event_id: string;
+  webhook_url: string;
+  status: string;
+  response_code: number;
+  error_message: string;
+  retry_count: number;
+  delivered_at: string;
+  created_at: string;
+}
+
+interface WebhookStats {
+  monthlyStats: Array<{
+    date: string;
+    event_type: string;
+    status: string;
+    count: number;
+  }>;
+  successRates: Array<{
+    event_type: string;
+    total: number;
+    successful: number;
+    success_rate: number;
+  }>;
+  pendingRetries: number;
+}
+
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('users');
@@ -92,6 +121,8 @@ export default function AdminDashboard() {
   const [plays, setPlays] = useState<Play[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
+  const [webhookStats, setWebhookStats] = useState<WebhookStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
@@ -106,12 +137,14 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, teamsRes, playsRes, signalsRes, analyticsRes] = await Promise.all([
+      const [usersRes, teamsRes, playsRes, signalsRes, analyticsRes, webhookLogsRes, webhookStatsRes] = await Promise.all([
         api.get('/admin/users'),
         api.get('/admin/teams'),
         api.get('/admin/plays'),
         api.get('/admin/signals'),
-        api.get('/analytics')
+        api.get('/analytics'),
+        api.get('/admin/webhook-logs'),
+        api.get('/admin/webhook-stats')
       ]);
 
       setUsers(usersRes.users || []);
@@ -119,6 +152,8 @@ export default function AdminDashboard() {
       setPlays(playsRes.plays || []);
       setSignals(signalsRes.signals || []);
       setAnalytics(analyticsRes);
+      setWebhookLogs(webhookLogsRes.logs || []);
+      setWebhookStats(webhookStatsRes);
     } catch (error) {
       console.error('Error loading admin data:', error);
     } finally {
@@ -248,12 +283,14 @@ export default function AdminDashboard() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="users">Users ({users.length})</TabsTrigger>
           <TabsTrigger value="teams">Teams ({teams.length})</TabsTrigger>
           <TabsTrigger value="plays">Plays ({plays.length})</TabsTrigger>
           <TabsTrigger value="signals">Signals ({signals.length})</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="webhooks">Webhooks ({webhookLogs.length})</TabsTrigger>
+          <TabsTrigger value="growth">Growth Toolkit</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -604,6 +641,132 @@ export default function AdminDashboard() {
                 ))}
               </TableBody>
             </Table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="webhooks" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Webhook Monitoring</h2>
+            <div className="text-sm text-muted-foreground">
+              {webhookStats?.pendingRetries || 0} pending retries
+            </div>
+          </div>
+
+          {/* Webhook Statistics */}
+          {webhookStats && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              {webhookStats.successRates.map((rate) => (
+                <Card key={rate.event_type}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">{rate.event_type}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{rate.success_rate}%</div>
+                    <p className="text-xs text-muted-foreground">
+                      {rate.successful} / {rate.total} successful
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Webhook Logs Table */}
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Event Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Response Code</TableHead>
+                  <TableHead>Retry Count</TableHead>
+                  <TableHead>Error Message</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {webhookLogs.map((log) => (
+                  <TableRow key={log.id}>
+                    <TableCell>
+                      <div className="font-medium">{log.event_type}</div>
+                      <div className="text-sm text-muted-foreground">{log.event_id}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge 
+                        variant={
+                          log.status === 'delivered' ? 'default' : 
+                          log.status === 'failed' ? 'destructive' : 
+                          log.status === 'retrying' ? 'secondary' : 'outline'
+                        }
+                      >
+                        {log.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {log.response_code ? (
+                        <Badge variant={log.response_code >= 400 ? 'destructive' : 'default'}>
+                          {log.response_code}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>{log.retry_count}</TableCell>
+                    <TableCell className="max-w-md truncate">
+                      {log.error_message || '-'}
+                    </TableCell>
+                    <TableCell>{formatDate(log.created_at)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="growth" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Growth Toolkit</h2>
+            <Badge variant="secondary">Coming Soon</Badge>
+          </div>
+          
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center py-12">
+                <div className="text-4xl mb-4">🚀</div>
+                <h3 className="text-lg font-medium mb-2">Growth Toolkit</h3>
+                <p className="text-muted-foreground mb-6">
+                  Manage referral codes, discount credits, and growth campaigns to drive user acquisition and retention.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left max-w-2xl mx-auto">
+                  <div className="p-4 border rounded-lg">
+                    <div className="font-medium mb-2">Referral Codes</div>
+                    <div className="text-sm text-muted-foreground">
+                      Create and manage user referral codes with percentage or fixed discounts
+                    </div>
+                  </div>
+                  
+                  <div className="p-4 border rounded-lg">
+                    <div className="font-medium mb-2">Discount Credits</div>
+                    <div className="text-sm text-muted-foreground">
+                      Track applied discounts and manage credit expiration
+                    </div>
+                  </div>
+                  
+                  <div className="p-4 border rounded-lg">
+                    <div className="font-medium mb-2">Growth Analytics</div>
+                    <div className="text-sm text-muted-foreground">
+                      Monitor referral performance and conversion rates
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-8 text-sm text-muted-foreground">
+                  <p>This feature will be available in a future update.</p>
+                  <p>Database schema and backend endpoints are ready for implementation.</p>
+                </div>
+              </div>
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>

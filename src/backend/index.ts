@@ -4996,6 +4996,232 @@ export default {
 
     // ===== ANALYTICS ENDPOINTS =====
 
+    // ===== WEBHOOK MONITORING ENDPOINTS =====
+
+    // Get webhook delivery logs (Admin only)
+    if (pathname === "/api/admin/webhook-logs" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const { searchParams } = new URL(request.url);
+        const status = searchParams.get("status");
+        const eventType = searchParams.get("event_type");
+        const limit = parseInt(searchParams.get("limit") || "50");
+        const offset = parseInt(searchParams.get("offset") || "0");
+
+        let query = `
+          SELECT 
+            id,
+            event_type,
+            event_id,
+            webhook_url,
+            status,
+            response_code,
+            error_message,
+            retry_count,
+            delivered_at,
+            created_at
+          FROM webhook_delivery_logs
+          WHERE 1=1
+        `;
+        const params: any[] = [];
+
+        if (status) {
+          query += ` AND status = ?`;
+          params.push(status);
+        }
+
+        if (eventType) {
+          query += ` AND event_type = ?`;
+          params.push(eventType);
+        }
+
+        query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+        params.push(limit, offset);
+
+        const logs = await env.DB.prepare(query).bind(...params).all();
+
+        // Get summary stats
+        const stats = await env.DB.prepare(`
+          SELECT 
+            status,
+            COUNT(*) as count
+          FROM webhook_delivery_logs
+          WHERE created_at > datetime('now', '-30 days')
+          GROUP BY status
+        `).all();
+
+        return jsonResponse({
+          logs: logs.results,
+          stats: stats.results,
+          pagination: {
+            limit,
+            offset,
+            total: logs.results.length
+          }
+        });
+      } catch (error) {
+        console.error("Error fetching webhook logs:", error);
+        return jsonResponse({ error: "Failed to fetch webhook logs" }, 500);
+      }
+    }
+
+    // Get webhook delivery statistics (Admin only)
+    if (pathname === "/api/admin/webhook-stats" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        // Last 30 days stats
+        const monthlyStats = await env.DB.prepare(`
+          SELECT 
+            DATE(created_at) as date,
+            event_type,
+            status,
+            COUNT(*) as count
+          FROM webhook_delivery_logs
+          WHERE created_at > datetime('now', '-30 days')
+          GROUP BY DATE(created_at), event_type, status
+          ORDER BY date DESC
+        `).all();
+
+        // Success rate by event type
+        const successRates = await env.DB.prepare(`
+          SELECT 
+            event_type,
+            COUNT(*) as total,
+            COUNT(CASE WHEN status = 'delivered' THEN 1 END) as successful,
+            ROUND(COUNT(CASE WHEN status = 'delivered' THEN 1 END) * 100.0 / COUNT(*), 2) as success_rate
+          FROM webhook_delivery_logs
+          WHERE created_at > datetime('now', '-30 days')
+          GROUP BY event_type
+        `).all();
+
+        // Pending retries
+        const pendingRetries = await env.DB.prepare(`
+          SELECT COUNT(*) as count
+          FROM webhook_delivery_logs
+          WHERE status = 'retrying' AND next_retry_at <= datetime('now')
+        `).first();
+
+        return jsonResponse({
+          monthlyStats: monthlyStats.results,
+          successRates: successRates.results,
+          pendingRetries: pendingRetries?.count || 0
+        });
+      } catch (error) {
+        console.error("Error fetching webhook stats:", error);
+        return jsonResponse({ error: "Failed to fetch webhook stats" }, 500);
+      }
+    }
+
+    // ===== SYSTEM STATUS ENDPOINT =====
+
+    // Get system status (Admin only)
+    if (pathname === "/api/admin/system-status" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        // Database health check
+        const dbHealth = await env.DB.prepare(`SELECT 1 as health`).first();
+        const dbHealthy = dbHealth?.health === 1;
+
+        // Stripe API health check
+        let stripeHealthy = false;
+        try {
+          const stripeResponse = await fetch('https://api.stripe.com/v1/account', {
+            headers: {
+              'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`
+            }
+          });
+          stripeHealthy = stripeResponse.ok;
+        } catch (error) {
+          console.error("Stripe API health check failed:", error);
+        }
+
+        // User and team counts
+        const userStats = await env.DB.prepare(`
+          SELECT 
+            COUNT(*) as total_users,
+            COUNT(CASE WHEN is_active = TRUE THEN 1 END) as active_users,
+            COUNT(CASE WHEN is_premium = TRUE THEN 1 END) as premium_users
+          FROM users
+        `).first();
+
+        const teamStats = await env.DB.prepare(`
+          SELECT 
+            COUNT(*) as total_teams,
+            COUNT(CASE WHEN is_active = TRUE THEN 1 END) as active_teams,
+            COUNT(CASE WHEN is_premium = TRUE THEN 1 END) as premium_teams
+          FROM teams
+        `).first();
+
+        // Pending webhook queue
+        const pendingWebhooks = await env.DB.prepare(`
+          SELECT COUNT(*) as count
+          FROM webhook_delivery_logs
+          WHERE status IN ('pending', 'retrying')
+        `).first();
+
+        // Recent activity (last 24 hours)
+        const recentActivity = await env.DB.prepare(`
+          SELECT 
+            COUNT(DISTINCT p.id) as new_plays,
+            COUNT(DISTINCT s.id) as new_signals,
+            COUNT(DISTINCT u.id) as new_users
+          FROM users u
+          LEFT JOIN plays p ON p.created_at > datetime('now', '-24 hours')
+          LEFT JOIN signals s ON s.created_at > datetime('now', '-24 hours')
+          WHERE u.created_at > datetime('now', '-24 hours')
+        `).first();
+
+        return jsonResponse({
+          timestamp: new Date().toISOString(),
+          health: {
+            database: dbHealthy,
+            stripe: stripeHealthy,
+            overall: dbHealthy && stripeHealthy
+          },
+          users: {
+            total: userStats?.total_users || 0,
+            active: userStats?.active_users || 0,
+            premium: userStats?.premium_users || 0
+          },
+          teams: {
+            total: teamStats?.total_teams || 0,
+            active: teamStats?.active_teams || 0,
+            premium: teamStats?.premium_teams || 0
+          },
+          webhooks: {
+            pending: pendingWebhooks?.count || 0
+          },
+          activity: {
+            last24h: {
+              newPlays: recentActivity?.new_plays || 0,
+              newSignals: recentActivity?.new_signals || 0,
+              newUsers: recentActivity?.new_users || 0
+            }
+          }
+        });
+      } catch (error) {
+        console.error("Error fetching system status:", error);
+        return jsonResponse({ error: "Failed to fetch system status" }, 500);
+      }
+    }
+
+    // ===== PERFORMANCE OPTIMIZATION =====
+
     return new Response("Not Found", { status: 404 });
   }
 }
