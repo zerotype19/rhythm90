@@ -113,6 +113,17 @@ interface WebhookStats {
   pendingRetries: number;
 }
 
+interface SystemHealth {
+  status: string;
+  timestamp: string;
+  checks: {
+    database: { status: string; details: any };
+    stripe: { status: string; details: any };
+    webhooks: { status: string; details: any };
+    users: { status: string; details: any };
+  };
+}
+
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('users');
@@ -123,6 +134,7 @@ export default function AdminDashboard() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
   const [webhookStats, setWebhookStats] = useState<WebhookStats | null>(null);
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
@@ -137,14 +149,15 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, teamsRes, playsRes, signalsRes, analyticsRes, webhookLogsRes, webhookStatsRes] = await Promise.all([
+      const [usersRes, teamsRes, playsRes, signalsRes, analyticsRes, webhookLogsRes, webhookStatsRes, systemHealthRes] = await Promise.all([
         api.get('/admin/users'),
         api.get('/admin/teams'),
         api.get('/admin/plays'),
         api.get('/admin/signals'),
         api.get('/analytics'),
         api.get('/admin/webhook-logs'),
-        api.get('/admin/webhook-stats')
+        api.get('/admin/webhook-stats'),
+        api.get('/system/health')
       ]);
 
       setUsers(usersRes.users || []);
@@ -154,6 +167,7 @@ export default function AdminDashboard() {
       setAnalytics(analyticsRes);
       setWebhookLogs(webhookLogsRes.logs || []);
       setWebhookStats(webhookStatsRes);
+      setSystemHealth(systemHealthRes);
     } catch (error) {
       console.error('Error loading admin data:', error);
     } finally {
@@ -283,7 +297,7 @@ export default function AdminDashboard() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="users">Users ({users.length})</TabsTrigger>
           <TabsTrigger value="teams">Teams ({teams.length})</TabsTrigger>
           <TabsTrigger value="plays">Plays ({plays.length})</TabsTrigger>
@@ -291,6 +305,7 @@ export default function AdminDashboard() {
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="webhooks">Webhooks ({webhookLogs.length})</TabsTrigger>
           <TabsTrigger value="growth">Growth Toolkit</TabsTrigger>
+          <TabsTrigger value="system">System Health</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -861,6 +876,203 @@ export default function AdminDashboard() {
                   </TableRow>
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="system" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">System Health</h2>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={loadData}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </div>
+
+          {/* System Status Overview */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Overall Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${
+                    systemHealth?.status === 'healthy' ? 'bg-green-500' : 
+                    systemHealth?.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'
+                  }`}></div>
+                  <div className="text-lg font-bold capitalize">
+                    {systemHealth?.status || 'Unknown'}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Last updated: {systemHealth ? new Date(systemHealth.timestamp).toLocaleString() : 'Never'}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Database</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${
+                    systemHealth?.checks.database.status === 'healthy' ? 'bg-green-500' : 
+                    systemHealth?.checks.database.status === 'unhealthy' ? 'bg-red-500' : 'bg-gray-500'
+                  }`}></div>
+                  <div className="text-lg font-bold capitalize">
+                    {systemHealth?.checks.database.status || 'Unknown'}
+                  </div>
+                </div>
+                {systemHealth?.checks.database.details && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {systemHealth.checks.database.details.userCount} users, {systemHealth.checks.database.details.teamCount} teams
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Stripe</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${
+                    systemHealth?.checks.stripe.status === 'healthy' ? 'bg-green-500' : 
+                    systemHealth?.checks.stripe.status === 'unhealthy' ? 'bg-red-500' : 'bg-gray-500'
+                  }`}></div>
+                  <div className="text-lg font-bold capitalize">
+                    {systemHealth?.checks.stripe.status || 'Unknown'}
+                  </div>
+                </div>
+                {systemHealth?.checks.stripe.details && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {systemHealth.checks.stripe.details.chargesEnabled ? 'Charges enabled' : 'Charges disabled'}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Active Users (24h)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {systemHealth?.checks.users.details?.activeUsers24h || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Unique logins
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Detailed Health Checks */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Detailed Health Checks</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Database */}
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-4 h-4 rounded-full ${
+                      systemHealth?.checks.database.status === 'healthy' ? 'bg-green-500' : 
+                      systemHealth?.checks.database.status === 'unhealthy' ? 'bg-red-500' : 'bg-gray-500'
+                    }`}></div>
+                    <div>
+                      <div className="font-medium">Database</div>
+                      <div className="text-sm text-muted-foreground">
+                        {systemHealth?.checks.database.status === 'healthy' ? 'Connection successful' : 
+                         systemHealth?.checks.database.status === 'unhealthy' ? 'Connection failed' : 'Status unknown'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {systemHealth?.checks.database.details ? 
+                      `${systemHealth.checks.database.details.userCount} users, ${systemHealth.checks.database.details.teamCount} teams` : 
+                      'No data'
+                    }
+                  </div>
+                </div>
+
+                {/* Stripe */}
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-4 h-4 rounded-full ${
+                      systemHealth?.checks.stripe.status === 'healthy' ? 'bg-green-500' : 
+                      systemHealth?.checks.stripe.status === 'unhealthy' ? 'bg-red-500' : 'bg-gray-500'
+                    }`}></div>
+                    <div>
+                      <div className="font-medium">Stripe API</div>
+                      <div className="text-sm text-muted-foreground">
+                        {systemHealth?.checks.stripe.status === 'healthy' ? 'API connection successful' : 
+                         systemHealth?.checks.stripe.status === 'unhealthy' ? 'API connection failed' : 'Status unknown'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {systemHealth?.checks.stripe.details ? 
+                      `Account: ${systemHealth.checks.stripe.details.accountId?.slice(0, 8)}...` : 
+                      'No data'
+                    }
+                  </div>
+                </div>
+
+                {/* Webhooks */}
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-4 h-4 rounded-full ${
+                      systemHealth?.checks.webhooks.status === 'healthy' ? 'bg-green-500' : 
+                      systemHealth?.checks.webhooks.status === 'unhealthy' ? 'bg-red-500' : 'bg-gray-500'
+                    }`}></div>
+                    <div>
+                      <div className="font-medium">Webhooks</div>
+                      <div className="text-sm text-muted-foreground">
+                        {systemHealth?.checks.webhooks.status === 'healthy' ? 'Webhook system operational' : 
+                         systemHealth?.checks.webhooks.status === 'unhealthy' ? 'Webhook system issues' : 'Status unknown'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {systemHealth?.checks.webhooks.details ? 
+                      `${systemHealth.checks.webhooks.details.pendingCount} pending` : 
+                      'No data'
+                    }
+                  </div>
+                </div>
+
+                {/* Users */}
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-4 h-4 rounded-full ${
+                      systemHealth?.checks.users.status === 'healthy' ? 'bg-green-500' : 
+                      systemHealth?.checks.users.status === 'unhealthy' ? 'bg-red-500' : 'bg-gray-500'
+                    }`}></div>
+                    <div>
+                      <div className="font-medium">Active Users</div>
+                      <div className="text-sm text-muted-foreground">
+                        {systemHealth?.checks.users.status === 'healthy' ? 'User activity tracking operational' : 
+                         systemHealth?.checks.users.status === 'unhealthy' ? 'User activity tracking issues' : 'Status unknown'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {systemHealth?.checks.users.details ? 
+                      `${systemHealth.checks.users.details.activeUsers24h} in last 24h` : 
+                      'No data'
+                    }
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

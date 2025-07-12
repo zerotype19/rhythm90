@@ -206,15 +206,87 @@ export default function UserSettings() {
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Connected Account
+                  Connected Accounts
                 </label>
-                <div className="flex items-center space-x-2">
-                  <Badge className={providerInfo.color}>
-                    {providerInfo.icon} {providerInfo.name}
-                  </Badge>
-                  <span className="text-sm text-muted-foreground">
-                    You can change this by logging out and signing in with a different account
-                  </span>
+                <div className="space-y-3">
+                  {/* Current connected providers */}
+                  {user.providers && user.providers.length > 0 ? (
+                    user.providers.map((provider: string) => {
+                      const providerInfo = providerMap[provider as keyof typeof providerMap] || { 
+                        name: provider, 
+                        icon: "🔗", 
+                        color: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200" 
+                      };
+                      return (
+                        <div key={provider} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <Badge className={providerInfo.color}>
+                              {providerInfo.icon} {providerInfo.name}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              Connected
+                            </span>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to disconnect your ${providerInfo.name} account?`)) {
+                                // TODO: Implement disconnect functionality
+                                alert("Disconnect functionality coming soon");
+                              }
+                            }}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            Disconnect
+                          </Button>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      No accounts connected
+                    </div>
+                  )}
+
+                  {/* Available providers to connect */}
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium text-foreground mb-2">Connect Additional Accounts</h4>
+                    <div className="space-y-2">
+                      {Object.entries(providerMap).map(([key, provider]) => {
+                        const isConnected = user.providers?.includes(key);
+                        return (
+                          <div key={key} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex items-center space-x-3">
+                              <Badge className={provider.color}>
+                                {provider.icon} {provider.name}
+                              </Badge>
+                              <span className="text-sm text-muted-foreground">
+                                {isConnected ? "Connected" : "Not connected"}
+                              </span>
+                            </div>
+                            {!isConnected && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  // TODO: Implement connect functionality
+                                  alert(`${provider.name} connection coming soon`);
+                                }}
+                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              >
+                                Connect
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Connecting multiple accounts allows you to sign in with any of them and keeps your data synchronized.
+                  </p>
                 </div>
               </div>
 

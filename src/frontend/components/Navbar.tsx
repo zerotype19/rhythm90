@@ -154,8 +154,9 @@ export default function Navbar() {
                 </Badge>
               )}
               {/* Main Navigation - Logged-in only */}
-              {isAuthenticated && loggedInNavigationItems.map((item) => (
-                item ? (
+              {isAuthenticated && loggedInNavigationItems
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .map((item) => (
                   <Link
                     key={item.to}
                     to={item.to}
@@ -163,8 +164,7 @@ export default function Navbar() {
                   >
                     {item.label}
                   </Link>
-                ) : null
-              ))}
+                ))}
               {/* Main Navigation - Public only */}
               {!isAuthenticated && publicNavigationItems.map((item) => (
                 item ? (
@@ -361,8 +361,9 @@ export default function Navbar() {
                 )}
                 
                 {/* Main Navigation Items */}
-                {(isAuthenticated ? loggedInNavigationItems : publicNavigationItems).filter(Boolean).map((item) => (
-                  item && (
+                {(isAuthenticated ? loggedInNavigationItems : publicNavigationItems)
+                  .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                  .map((item) => (
                     <Link
                       key={item.to}
                       to={item.to}
@@ -371,8 +372,7 @@ export default function Navbar() {
                     >
                       <span className="flex-1">{item.label}</span>
                     </Link>
-                  )
-                ))}
+                  ))}
 
                 {/* Login button for public pages */}
                 {!isAuthenticated && (
@@ -391,16 +391,18 @@ export default function Navbar() {
                     <div className="px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white">
                       Admin
                     </div>
-                    {adminDropdownItems.filter(Boolean).map((item) => (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        className="block px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                        onClick={closeMobileMenu}
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
+                    {adminDropdownItems
+                      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                      .map((item) => (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className="block px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                          onClick={closeMobileMenu}
+                        >
+                          {item.label}
+                        </Link>
+                      ))}
                   </div>
                 )}
 
@@ -410,31 +412,33 @@ export default function Navbar() {
                     <div className="px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white">
                       Profile
                     </div>
-                    {profileItems.filter(Boolean).map((item) => (
-                      item && (item.action ? (
-                        <button
-                          key={item.to}
-                          onClick={() => {
-                            item.action();
-                            closeMobileMenu();
-                          }}
-                          className="flex items-center w-full px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                        >
-                          <span className="mr-2">{item.icon}</span>
-                          {item.label}
-                        </button>
-                      ) : (
-                        <Link
-                          key={item.to}
-                          to={item.to}
-                          className="flex items-center px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                          onClick={closeMobileMenu}
-                        >
-                          <span className="mr-2">{item.icon}</span>
-                          {item.label}
-                        </Link>
-                      ))
-                    ))}
+                    {profileItems
+                      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                      .map((item) => (
+                        item.action ? (
+                          <button
+                            key={item.to}
+                            onClick={() => {
+                              item.action();
+                              closeMobileMenu();
+                            }}
+                            className="flex items-center w-full px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                          >
+                            <span className="mr-2">{item.icon}</span>
+                            {item.label}
+                          </button>
+                        ) : (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            className="flex items-center px-6 py-2 text-sm text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                            onClick={closeMobileMenu}
+                          >
+                            <span className="mr-2">{item.icon}</span>
+                            {item.label}
+                          </Link>
+                        )
+                      ))}
                     <div className="px-6 py-2">
                       <ThemeToggle />
                     </div>

@@ -23,6 +23,9 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   MICROSOFT_REDIRECT_URI?: string;
   SENTRY_DSN?: string;
+  MAILCHIMP_API_KEY?: string;
+  MAILCHIMP_LIST_ID?: string;
+  MAILCHIMP_SERVER_PREFIX?: string;
 }
 
 // Helper function to check if user is admin
@@ -179,6 +182,115 @@ export default {
 
     if (pathname === "/health") {
       return new Response(JSON.stringify({ status: "ok" }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // Enhanced system health endpoint
+    if (pathname === "/api/system/health" && request.method === "GET") {
+      try {
+        const health = {
+          status: "healthy",
+          timestamp: new Date().toISOString(),
+          checks: {
+            database: { status: "unknown", details: null },
+            stripe: { status: "unknown", details: null },
+            webhooks: { status: "unknown", details: null },
+            users: { status: "unknown", details: null }
+          }
+        };
+
+        // Database connection check
+        try {
+          const dbCheck = await env.DB.prepare("SELECT 1 as test").first();
+          if (dbCheck) {
+            health.checks.database.status = "healthy";
+            
+            // Get user and team counts
+            const userCount = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
+            const teamCount = await env.DB.prepare("SELECT COUNT(*) as count FROM teams").first();
+            health.checks.database.details = {
+              userCount: userCount?.count || 0,
+              teamCount: teamCount?.count || 0
+            };
+          } else {
+            health.checks.database.status = "unhealthy";
+          }
+        } catch (error) {
+          health.checks.database.status = "error";
+          health.checks.database.details = error.message;
+        }
+
+        // Stripe API check
+        try {
+          const stripeResponse = await fetch('https://api.stripe.com/v1/account', {
+            headers: {
+              'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+            }
+          });
+          
+          if (stripeResponse.ok) {
+            const accountData = await stripeResponse.json();
+            health.checks.stripe.status = "healthy";
+            health.checks.stripe.details = {
+              accountId: accountData.id,
+              chargesEnabled: accountData.charges_enabled,
+              payoutsEnabled: accountData.payouts_enabled
+            };
+          } else {
+            health.checks.stripe.status = "unhealthy";
+            health.checks.stripe.details = `HTTP ${stripeResponse.status}`;
+          }
+        } catch (error) {
+          health.checks.stripe.status = "error";
+          health.checks.stripe.details = error.message;
+        }
+
+        // Pending webhooks check
+        try {
+          const pendingWebhooks = await env.DB.prepare(`
+            SELECT COUNT(*) as count 
+            FROM webhook_logs 
+            WHERE status = 'pending' AND created_at > datetime('now', '-1 hour')
+          `).first();
+          
+          health.checks.webhooks.status = "healthy";
+          health.checks.webhooks.details = {
+            pendingCount: pendingWebhooks?.count || 0
+          };
+        } catch (error) {
+          health.checks.webhooks.status = "error";
+          health.checks.webhooks.details = error.message;
+        }
+
+        // Active users summary (last 24h)
+        try {
+          const activeUsers = await env.DB.prepare(`
+            SELECT COUNT(DISTINCT user_id) as count 
+            FROM analytics_events 
+            WHERE event_type = 'user_login' AND created_at > datetime('now', '-1 day')
+          `).first();
+          
+          health.checks.users.status = "healthy";
+          health.checks.users.details = {
+            activeUsers24h: activeUsers?.count || 0
+          };
+        } catch (error) {
+          health.checks.users.status = "error";
+          health.checks.users.details = error.message;
+        }
+
+        // Overall status
+        const allHealthy = Object.values(health.checks).every(check => check.status === "healthy");
+        health.status = allHealthy ? "healthy" : "degraded";
+
+        return jsonResponse(health);
+      } catch (error) {
+        console.error("System health check error:", error);
+        return jsonResponse({ 
+          status: "error", 
+          timestamp: new Date().toISOString(),
+          error: error.message 
+        }, 500);
+      }
     }
 
     // Demo mode check route
@@ -5669,6 +5781,36 @@ export default {
       }
     }
 
+    // Get global referral leaderboard (public)
+    if (pathname === "/api/referral-leaderboard" && request.method === "GET") {
+      try {
+        const leaderboard = await env.DB.prepare(`
+          SELECT 
+            u.name as user_name,
+            u.email as user_email,
+            COUNT(ru.id) as referral_count,
+            SUM(dc.amount) as total_credits,
+            MAX(ru.created_at) as last_referral
+          FROM users u
+          JOIN referral_codes rc ON u.id = rc.user_id
+          LEFT JOIN referral_usage ru ON rc.id = ru.referral_code_id
+          LEFT JOIN discount_credits dc ON ru.discount_credit_id = dc.id
+          GROUP BY u.id
+          HAVING referral_count > 0
+          ORDER BY referral_count DESC, total_credits DESC
+          LIMIT 20
+        `).all();
+
+        return jsonResponse({
+          leaderboard: leaderboard.results,
+          lastUpdated: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error("Error fetching referral leaderboard:", error);
+        return jsonResponse({ error: "Failed to fetch leaderboard" }, 500);
+      }
+    }
+
     // ===== PERFORMANCE OPTIMIZATION =====
 
     // Helper function to check and update onboarding status
@@ -5698,6 +5840,63 @@ export default {
         }
       } catch (error) {
         console.error("Error checking onboarding status:", error);
+      }
+    }
+
+    // Email signup (Mailchimp integration)
+    if (pathname === "/api/email-signup" && request.method === "POST") {
+      try {
+        const body = await request.json() as { email: string; firstName?: string; lastName?: string };
+        
+        // Basic email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(body.email)) {
+          return jsonResponse({ error: "Invalid email address" }, 400);
+        }
+
+        // Check if Mailchimp is configured
+        if (!env.MAILCHIMP_API_KEY || !env.MAILCHIMP_LIST_ID || !env.MAILCHIMP_SERVER_PREFIX) {
+          console.warn("Mailchimp not configured, skipping email signup");
+          return jsonResponse({ success: true, message: "Email signup received" });
+        }
+
+        // Add to Mailchimp
+        const mailchimpUrl = `https://${env.MAILCHIMP_SERVER_PREFIX}.api.mailchimp.com/3.0/lists/${env.MAILCHIMP_LIST_ID}/members`;
+        
+        const mailchimpData = {
+          email_address: body.email,
+          status: "subscribed",
+          merge_fields: {
+            FNAME: body.firstName || "",
+            LNAME: body.lastName || ""
+          }
+        };
+
+        const response = await fetch(mailchimpUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${env.MAILCHIMP_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(mailchimpData)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("Mailchimp error:", errorData);
+          
+          // If user already exists, that's fine
+          if (response.status === 400 && errorData.title === "Member Exists") {
+            return jsonResponse({ success: true, message: "Email already subscribed" });
+          }
+          
+          return jsonResponse({ error: "Failed to subscribe email" }, 500);
+        }
+
+        return jsonResponse({ success: true, message: "Email subscribed successfully" });
+      } catch (error) {
+        console.error("Error in email signup:", error);
+        return jsonResponse({ error: "Failed to process email signup" }, 500);
       }
     }
 
