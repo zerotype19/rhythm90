@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "../hooks/useAuth";
 import Navbar from "./Navbar";
 import PageLayout from "./PageLayout";
+import SystemNoticeBanner from "./SystemNoticeBanner";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -37,6 +38,9 @@ export default function AppLayout({
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <Navbar />
+      
+      {/* System Notice Banner */}
+      <SystemNoticeBanner />
       
       {/* Main Content */}
       <main className="flex-1">

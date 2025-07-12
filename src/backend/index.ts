@@ -5477,6 +5477,198 @@ export default {
       }
     }
 
+    // ===== GROWTH TOOLKIT ENDPOINTS =====
+
+    // Get referral codes (admin only)
+    if (pathname === "/api/referral-codes" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const codes = await env.DB.prepare(`
+          SELECT 
+            rc.*,
+            u.name as user_name,
+            u.email as user_email,
+            COUNT(ru.id) as total_referrals,
+            SUM(dc.amount) as total_credits_generated
+          FROM referral_codes rc
+          LEFT JOIN users u ON rc.user_id = u.id
+          LEFT JOIN referral_usage ru ON rc.id = ru.referral_code_id
+          LEFT JOIN discount_credits dc ON ru.discount_credit_id = dc.id
+          GROUP BY rc.id
+          ORDER BY rc.created_at DESC
+        `).all();
+
+        return jsonResponse({ codes: codes.results });
+      } catch (error) {
+        console.error("Error fetching referral codes:", error);
+        return jsonResponse({ error: "Failed to fetch referral codes" }, 500);
+      }
+    }
+
+    // Create referral code (admin only)
+    if (pathname === "/api/referral-codes" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as {
+          targetUserId: string;
+          discountType: 'percentage' | 'fixed';
+          discountValue: number;
+          maxUses?: number;
+          expiresAt?: string;
+        };
+
+        // Generate unique code (6-8 characters)
+        const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+        
+        const codeId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO referral_codes (
+            id, user_id, code, discount_type, discount_value, 
+            max_uses, expires_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).bind(
+          codeId,
+          body.targetUserId,
+          code,
+          body.discountType,
+          body.discountValue,
+          body.maxUses || null,
+          body.expiresAt || null
+        ).run();
+
+        return jsonResponse({ 
+          success: true, 
+          codeId,
+          code,
+          message: "Referral code created successfully" 
+        });
+      } catch (error) {
+        console.error("Error creating referral code:", error);
+        return jsonResponse({ error: "Failed to create referral code" }, 500);
+      }
+    }
+
+    // Get discount credits (admin only)
+    if (pathname === "/api/discount-credits" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const credits = await env.DB.prepare(`
+          SELECT 
+            dc.*,
+            u.name as user_name,
+            u.email as user_email,
+            rc.code as referral_code
+          FROM discount_credits dc
+          LEFT JOIN users u ON dc.user_id = u.id
+          LEFT JOIN referral_codes rc ON dc.referral_code_id = rc.id
+          ORDER BY dc.created_at DESC
+        `).all();
+
+        return jsonResponse({ credits: credits.results });
+      } catch (error) {
+        console.error("Error fetching discount credits:", error);
+        return jsonResponse({ error: "Failed to fetch discount credits" }, 500);
+      }
+    }
+
+    // Assign discount credit (admin only)
+    if (pathname === "/api/discount-credits" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as {
+          targetUserId: string;
+          referralCodeId: string;
+          amount: number;
+          expiresAt?: string;
+        };
+
+        const creditId = crypto.randomUUID();
+        await env.DB.prepare(`
+          INSERT INTO discount_credits (
+            id, user_id, referral_code_id, amount, expires_at, created_at
+          ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(
+          creditId,
+          body.targetUserId,
+          body.referralCodeId,
+          body.amount,
+          body.expiresAt || null
+        ).run();
+
+        return jsonResponse({ 
+          success: true, 
+          creditId,
+          message: "Discount credit assigned successfully" 
+        });
+      } catch (error) {
+        console.error("Error assigning discount credit:", error);
+        return jsonResponse({ error: "Failed to assign discount credit" }, 500);
+      }
+    }
+
+    // Get growth analytics (admin only)
+    if (pathname === "/api/growth-analytics" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId || !(await isAdmin(env, userId))) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        // Get referral statistics
+        const referralStats = await env.DB.prepare(`
+          SELECT 
+            COUNT(DISTINCT rc.id) as total_codes,
+            COUNT(DISTINCT ru.id) as total_referrals,
+            SUM(dc.amount) as total_credits_generated,
+            AVG(dc.amount) as avg_credit_amount
+          FROM referral_codes rc
+          LEFT JOIN referral_usage ru ON rc.id = ru.referral_code_id
+          LEFT JOIN discount_credits dc ON ru.discount_credit_id = dc.id
+        `).first();
+
+        // Get top referrers
+        const topReferrers = await env.DB.prepare(`
+          SELECT 
+            u.name as user_name,
+            u.email as user_email,
+            COUNT(ru.id) as referral_count,
+            SUM(dc.amount) as total_credits
+          FROM users u
+          JOIN referral_codes rc ON u.id = rc.user_id
+          LEFT JOIN referral_usage ru ON rc.id = ru.referral_code_id
+          LEFT JOIN discount_credits dc ON ru.discount_credit_id = dc.id
+          GROUP BY u.id
+          HAVING referral_count > 0
+          ORDER BY referral_count DESC
+          LIMIT 10
+        `).all();
+
+        return jsonResponse({
+          referralStats,
+          topReferrers: topReferrers.results
+        });
+      } catch (error) {
+        console.error("Error fetching growth analytics:", error);
+        return jsonResponse({ error: "Failed to fetch growth analytics" }, 500);
+      }
+    }
+
     // ===== PERFORMANCE OPTIMIZATION =====
 
     // Helper function to check and update onboarding status

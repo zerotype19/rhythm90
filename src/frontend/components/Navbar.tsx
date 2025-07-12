@@ -117,6 +117,9 @@ export default function Navbar() {
             {/* Logo */}
             <Link to="/" className="text-2xl font-bold text-foreground" onClick={closeMobileMenu}>
               Rhythm90.io
+              <Badge className="ml-2 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs">
+                BETA
+              </Badge>
             </Link>
 
             {/* Mobile Menu Button */}
@@ -359,14 +362,16 @@ export default function Navbar() {
                 
                 {/* Main Navigation Items */}
                 {(isAuthenticated ? loggedInNavigationItems : publicNavigationItems).filter(Boolean).map((item) => (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className="flex items-center px-3 py-2 rounded-md text-base font-medium text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                    onClick={closeMobileMenu}
-                  >
-                    <span className="flex-1">{item.label}</span>
-                  </Link>
+                  item && (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="flex items-center px-3 py-2 rounded-md text-base font-medium text-gray-900 dark:text-white hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                      onClick={closeMobileMenu}
+                    >
+                      <span className="flex-1">{item.label}</span>
+                    </Link>
+                  )
                 ))}
 
                 {/* Login button for public pages */}
@@ -406,7 +411,7 @@ export default function Navbar() {
                       Profile
                     </div>
                     {profileItems.filter(Boolean).map((item) => (
-                      item.action ? (
+                      item && (item.action ? (
                         <button
                           key={item.to}
                           onClick={() => {
@@ -428,7 +433,7 @@ export default function Navbar() {
                           <span className="mr-2">{item.icon}</span>
                           {item.label}
                         </Link>
-                      )
+                      ))
                     ))}
                     <div className="px-6 py-2">
                       <ThemeToggle />

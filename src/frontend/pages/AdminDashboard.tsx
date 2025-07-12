@@ -726,46 +726,141 @@ export default function AdminDashboard() {
         <TabsContent value="growth" className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Growth Toolkit</h2>
-            <Badge variant="secondary">Coming Soon</Badge>
+            <Badge variant="secondary">Beta</Badge>
           </div>
           
+          {/* Growth Analytics Overview */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Total Referral Codes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">0</div>
+                <p className="text-xs text-muted-foreground">Active codes</p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Total Referrals</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">0</div>
+                <p className="text-xs text-muted-foreground">Successful referrals</p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Credits Generated</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">$0</div>
+                <p className="text-xs text-muted-foreground">Total value</p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Avg Credit</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">$0</div>
+                <p className="text-xs text-muted-foreground">Per referral</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Referral Codes Management */}
           <Card>
-            <CardContent className="pt-6">
-              <div className="text-center py-12">
-                <div className="text-4xl mb-4">🚀</div>
-                <h3 className="text-lg font-medium mb-2">Growth Toolkit</h3>
-                <p className="text-muted-foreground mb-6">
-                  Manage referral codes, discount credits, and growth campaigns to drive user acquisition and retention.
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left max-w-2xl mx-auto">
-                  <div className="p-4 border rounded-lg">
-                    <div className="font-medium mb-2">Referral Codes</div>
-                    <div className="text-sm text-muted-foreground">
-                      Create and manage user referral codes with percentage or fixed discounts
-                    </div>
-                  </div>
-                  
-                  <div className="p-4 border rounded-lg">
-                    <div className="font-medium mb-2">Discount Credits</div>
-                    <div className="text-sm text-muted-foreground">
-                      Track applied discounts and manage credit expiration
-                    </div>
-                  </div>
-                  
-                  <div className="p-4 border rounded-lg">
-                    <div className="font-medium mb-2">Growth Analytics</div>
-                    <div className="text-sm text-muted-foreground">
-                      Monitor referral performance and conversion rates
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="mt-8 text-sm text-muted-foreground">
-                  <p>This feature will be available in a future update.</p>
-                  <p>Database schema and backend endpoints are ready for implementation.</p>
-                </div>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Referral Codes</CardTitle>
+                <Button size="sm" onClick={() => alert('Create referral code functionality coming soon')}>
+                  Create Code
+                </Button>
               </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Code</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>Discount</TableHead>
+                    <TableHead>Uses</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      No referral codes created yet
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Discount Credits Management */}
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Discount Credits</CardTitle>
+                <Button size="sm" onClick={() => alert('Assign credit functionality coming soon')}>
+                  Assign Credit
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Referral Code</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Expires</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      No discount credits assigned yet
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Top Referrers */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Top Referrers</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Referrals</TableHead>
+                    <TableHead>Total Credits</TableHead>
+                    <TableHead>Avg per Referral</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      No referral activity yet
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
