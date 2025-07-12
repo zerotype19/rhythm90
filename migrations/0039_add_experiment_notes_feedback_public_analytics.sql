@@ -99,11 +99,5 @@ CREATE INDEX IF NOT EXISTS idx_social_post_drafts_status ON social_post_drafts(s
 CREATE INDEX IF NOT EXISTS idx_product_hunt_tracking_user_id ON product_hunt_tracking(user_id);
 CREATE INDEX IF NOT EXISTS idx_product_hunt_tracking_action_type ON product_hunt_tracking(action_type);
 
--- Insert default social post drafts
-INSERT OR IGNORE INTO social_post_drafts (id, platform, title, content, created_by) VALUES
-('twitter-launch', 'twitter', 'Rhythm90 Launch', '🚀 Just launched Rhythm90 - AI-powered product strategy insights! Turn observations into actionable insights with your team. Check it out: https://rhythm90.io #ProductStrategy #AI #Launch', 'system'),
-('linkedin-launch', 'linkedin', 'Rhythm90: AI-Powered Product Strategy', 'Excited to share Rhythm90, our new AI-powered platform that helps product teams turn observations into actionable insights. Built for collaboration and data-driven decision making. https://rhythm90.io', 'system'),
-('product-hunt', 'product_hunt', 'Rhythm90 - AI-Powered Product Strategy Platform', 'Rhythm90 helps product teams collaborate on strategy by turning observations into actionable insights with AI. Perfect for PMs, designers, and developers working together.', 'system');
-
 -- Update existing experiments with placeholder notes
 UPDATE experiments SET admin_notes = 'Default experiment - monitor performance and adjust as needed.' WHERE admin_notes IS NULL; 

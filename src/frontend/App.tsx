@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import Onboarding from "./pages/Onboarding";
 import Admin from "./pages/Admin";
 import UserSettings from "./pages/UserSettings";
 import Developer from "./pages/Developer";
@@ -50,6 +51,7 @@ function App() {
 
               {/* App Routes */}
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/admin/*" element={<Admin />} />
               <Route path="/settings" element={<UserSettings />} />

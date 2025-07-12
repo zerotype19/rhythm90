@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -12,6 +13,7 @@ import CreatePlayModal from "../components/CreatePlayModal";
 import CreateSignalModal from "../components/CreateSignalModal";
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState({ playCount: 0, signalCount: 0 });
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +36,13 @@ export default function Dashboard() {
       ]);
       
       setUser(userData);
+      
+      // Check if user has a team - if not, redirect to onboarding
+      if (!userData.current_team_id) {
+        navigate('/onboarding');
+        return;
+      }
+      
       setStats({ 
         playCount: playsData.plays?.length || 0, 
         signalCount: 0 // TODO: Add signal count endpoint

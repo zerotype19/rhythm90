@@ -372,12 +372,36 @@ export default {
         if (!userId) {
           return jsonResponse({ error: "Unauthorized" }, 401);
         }
-        // Get user base info
-        const user = await env.DB.prepare(`SELECT id, email, name, role FROM users WHERE id = ?`).bind(userId).first();
+        // Get user base info with premium status
+        const user = await env.DB.prepare(`SELECT id, email, name, role, is_premium, current_team_id FROM users WHERE id = ?`).bind(userId).first();
         console.log('[BACKEND] /me DB User:', user);
         if (!user) {
           return jsonResponse({ error: "Unauthorized" }, 401);
         }
+        
+        // Get current team info if user has one
+        let currentTeam = null;
+        if (user.current_team_id) {
+          const teamResult = await env.DB.prepare(`
+            SELECT t.id, t.name, t.is_premium, t.created_at, 
+                   COUNT(tm.user_id) as member_count
+            FROM teams t
+            LEFT JOIN team_members tm ON t.id = tm.team_id
+            WHERE t.id = ?
+            GROUP BY t.id
+          `).bind(user.current_team_id).first();
+          
+          if (teamResult) {
+            currentTeam = {
+              id: teamResult.id,
+              name: teamResult.name,
+              is_premium: teamResult.is_premium === 1,
+              member_count: teamResult.member_count,
+              created_at: teamResult.created_at
+            };
+          }
+        }
+        
         // Get linked providers and avatars
         const providersRes = await env.DB.prepare(`SELECT provider, avatar FROM oauth_providers WHERE user_id = ?`).bind(userId).all();
         const providers = providersRes.results.map((p: any) => p.provider);
@@ -389,12 +413,16 @@ export default {
             break;
           }
         }
+        
         return jsonResponse({
           id: user.id,
           email: user.email,
           name: user.name,
           avatar,
           role: user.role,
+          is_premium: user.is_premium === 1,
+          current_team_id: user.current_team_id,
+          current_team: currentTeam,
           providers
         });
       } catch (error) {
