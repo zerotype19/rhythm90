@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import Loading from '../components/Loading';
+import AppLayout from '../components/AppLayout';
 
 export default function Team() {
   const [members, setMembers] = useState<any[]>([]);
@@ -51,7 +52,7 @@ export default function Team() {
   if (loading) return <Loading />;
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <AppLayout maxWidth="4xl" className="py-8">
       <h1 className="text-3xl font-bold text-rhythmBlack dark:text-white mb-8">Team Management</h1>
       
       {/* Add Member Form */}
@@ -129,6 +130,6 @@ export default function Team() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </AppLayout>
   );
 } 

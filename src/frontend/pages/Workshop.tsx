@@ -5,6 +5,7 @@ import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { fetchWorkshopSteps, updateWorkshopProgress, fetchTemplates, fetchTeamMembersWithRoles, updateWorkshopPresence, fetchWorkshopPresence, fetchWorkshopSync } from "../utils/api";
+import AppLayout from '../components/AppLayout';
 
 interface WorkshopStep {
   id: string;
@@ -238,7 +239,7 @@ export default function Workshop() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-8 space-y-8">
+    <AppLayout maxWidth="5xl" className="py-8">
       <div className="text-center">
         <h1 className="text-3xl font-bold mb-2">🎯 Team Workshop</h1>
         <p className="text-gray-600 dark:text-gray-400">
@@ -529,6 +530,6 @@ export default function Workshop() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </AppLayout>
   );
 } 
