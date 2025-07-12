@@ -4,6 +4,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import Loading from "../components/Loading";
 import OnboardingSidebar from "../components/OnboardingSidebar";
+import WelcomeModal from "../components/WelcomeModal";
 import AiAssistantPanel from "../components/AiAssistantPanel";
 import AppLayout from "../components/AppLayout";
 import CreateTeamModal from "../components/CreateTeamModal";
@@ -17,6 +18,8 @@ export default function Dashboard() {
   const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
   const [showCreatePlayModal, setShowCreatePlayModal] = useState(false);
   const [showCreateSignalModal, setShowCreateSignalModal] = useState(false);
+  const [onboardingStatus, setOnboardingStatus] = useState<any>(null);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -24,9 +27,10 @@ export default function Dashboard() {
 
   const loadDashboardData = async () => {
     try {
-      const [userData, playsData] = await Promise.all([
+      const [userData, playsData, onboardingData] = await Promise.all([
         fetch('/me', { credentials: 'include' }).then(res => res.json()),
-        fetch('/api/plays', { credentials: 'include' }).then(res => res.json()).catch(() => ({ plays: [] }))
+        fetch('/api/plays', { credentials: 'include' }).then(res => res.json()).catch(() => ({ plays: [] })),
+        fetch('/api/onboarding/status', { credentials: 'include' }).then(res => res.json()).catch(() => null)
       ]);
       
       setUser(userData);
@@ -34,6 +38,13 @@ export default function Dashboard() {
         playCount: playsData.plays?.length || 0, 
         signalCount: 0 // TODO: Add signal count endpoint
       });
+      setOnboardingStatus(onboardingData);
+
+      // Show welcome modal if onboarding was just completed
+      if (onboardingData?.isOnboarded && !localStorage.getItem('welcome-shown')) {
+        setShowWelcomeModal(true);
+        localStorage.setItem('welcome-shown', 'true');
+      }
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -45,12 +56,40 @@ export default function Dashboard() {
     loadDashboardData(); // Refresh data after successful creation
   };
 
+  const handleOnboardingStep = (step: string) => {
+    switch (step) {
+      case 'profile':
+        window.location.href = '/settings';
+        break;
+      case 'team':
+        setShowCreateTeamModal(true);
+        break;
+      case 'play':
+        setShowCreatePlayModal(true);
+        break;
+      case 'signal':
+        setShowCreateSignalModal(true);
+        break;
+    }
+  };
+
+  const handleOnboardingSkip = () => {
+    loadDashboardData(); // Refresh to hide onboarding sidebar
+  };
+
   if (loading) return <Loading />;
 
   return (
     <AppLayout maxWidth="7xl" className="py-8">
-      <OnboardingSidebar />
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex gap-8">
+        {onboardingStatus && !onboardingStatus.isOnboarded && (
+          <OnboardingSidebar 
+            onStepClick={handleOnboardingStep}
+            onSkip={handleOnboardingSkip}
+          />
+        )}
+        <div className="flex-1">
+          <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
         {user?.is_premium && (
           <Badge className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white">
@@ -153,6 +192,10 @@ export default function Dashboard() {
         <AiAssistantPanel />
       </div>
 
+          </div>
+        </div>
+      </div>
+
       {/* Modals */}
       <CreateTeamModal
         isOpen={showCreateTeamModal}
@@ -170,6 +213,11 @@ export default function Dashboard() {
         isOpen={showCreateSignalModal}
         onClose={() => setShowCreateSignalModal(false)}
         onSuccess={handleSuccess}
+      />
+
+      <WelcomeModal
+        isOpen={showWelcomeModal}
+        onClose={() => setShowWelcomeModal(false)}
       />
     </AppLayout>
   );

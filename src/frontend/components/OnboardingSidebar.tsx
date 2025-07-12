@@ -1,161 +1,175 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
-
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
 
 interface OnboardingStatus {
   hasCompletedProfile: boolean;
   hasJoinedTeam: boolean;
   hasCreatedPlay: boolean;
   hasLoggedSignal: boolean;
+  isOnboarded: boolean;
+  currentTeamId: string | null;
 }
 
-const ONBOARDING_ITEMS = [
-  {
-    id: "profile",
-    title: "Complete your profile",
-    description: "Set up your name and basic information",
-    icon: "👤",
-    field: "hasCompletedProfile" as keyof OnboardingStatus
-  },
-  {
-    id: "team",
-    title: "Join or create a team",
-    description: "Connect with your team members",
-    icon: "👥",
-    field: "hasJoinedTeam" as keyof OnboardingStatus
-  },
-  {
-    id: "play",
-    title: "Create your first play",
-    description: "Set up a marketing play to track signals",
-    icon: "🎯",
-    field: "hasCreatedPlay" as keyof OnboardingStatus
-  },
-  {
-    id: "signal",
-    title: "Log your first signal",
-    description: "Track an observation for your play",
-    icon: "📊",
-    field: "hasLoggedSignal" as keyof OnboardingStatus
-  }
-];
+interface OnboardingSidebarProps {
+  onStepClick?: (step: string) => void;
+  onSkip?: () => void;
+}
 
-export default function OnboardingSidebar() {
-  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
+export default function OnboardingSidebar({ onStepClick, onSkip }: OnboardingSidebarProps) {
+  const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchOnboardingStatus();
+    loadOnboardingStatus();
   }, []);
 
-  const fetchOnboardingStatus = async () => {
+  const loadOnboardingStatus = async () => {
     try {
-      const response = await fetch('/api/onboarding-status', {
-        credentials: 'include'
-      });
-      
+      const response = await fetch('/api/onboarding/status');
       if (response.ok) {
         const data = await response.json();
-        setOnboardingStatus(data);
-      } else {
-        console.error('Failed to fetch onboarding status');
+        setStatus(data);
       }
     } catch (error) {
-      console.error('Error fetching onboarding status:', error);
+      console.error('Failed to load onboarding status:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const getCompletedCount = () => {
-    if (!onboardingStatus) return 0;
-    return Object.values(onboardingStatus).filter(Boolean).length;
-  };
-
-  const isCompleted = (field: keyof OnboardingStatus) => {
-    return onboardingStatus?.[field] || false;
+  const handleSkip = async () => {
+    try {
+      const response = await fetch('/api/onboarding/skip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (response.ok) {
+        await loadOnboardingStatus();
+        onSkip?.();
+      }
+    } catch (error) {
+      console.error('Failed to skip onboarding:', error);
+    }
   };
 
   if (loading) {
     return (
-      <aside className="w-full max-w-xs p-4 bg-muted rounded-lg mb-8">
-        <h2 className="text-lg font-bold mb-4">Onboarding</h2>
-        <div className="animate-pulse space-y-3">
-          <div className="h-4 bg-gray-200 rounded"></div>
-          <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-        </div>
-      </aside>
+      <Card className="w-80">
+        <CardHeader>
+          <CardTitle>Onboarding Progress</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center space-x-3">
+                <div className="w-6 h-6 bg-muted rounded-full"></div>
+                <div className="flex-1 h-4 bg-muted rounded"></div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
-  const completedCount = getCompletedCount();
-  const totalItems = ONBOARDING_ITEMS.length;
+  if (!status || status.isOnboarded) {
+    return null;
+  }
+
+  const steps = [
+    {
+      id: 'profile',
+      title: 'Complete Profile',
+      description: 'Add your name, role, and avatar',
+      completed: status.hasCompletedProfile,
+      action: () => onStepClick?.('profile')
+    },
+    {
+      id: 'team',
+      title: 'Join or Create Team',
+      description: 'Connect with your team',
+      completed: status.hasJoinedTeam,
+      action: () => onStepClick?.('team')
+    },
+    {
+      id: 'play',
+      title: 'Create First Play',
+      description: 'Set up your first play',
+      completed: status.hasCreatedPlay,
+      action: () => onStepClick?.('play')
+    },
+    {
+      id: 'signal',
+      title: 'Log First Signal',
+      description: 'Record your first observation',
+      completed: status.hasLoggedSignal,
+      action: () => onStepClick?.('signal')
+    }
+  ];
+
+  const completedCount = steps.filter(step => step.completed).length;
+  const progressPercentage = (completedCount / steps.length) * 100;
 
   return (
-    <aside className="w-full max-w-xs p-4 bg-muted rounded-lg mb-8">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold">Onboarding</h2>
-        <Badge variant="secondary">
-          {completedCount}/{totalItems}
-        </Badge>
-      </div>
-      
-      <div className="space-y-3">
-        {ONBOARDING_ITEMS.map((item) => (
-          <div
-            key={item.id}
-            className={`flex items-start space-x-3 p-3 rounded-lg transition-colors ${
-              isCompleted(item.field) 
+    <Card className="w-80">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>Onboarding Progress</span>
+          <Badge variant="secondary">{completedCount}/4</Badge>
+        </CardTitle>
+        <div className="w-full bg-muted rounded-full h-2">
+          <div 
+            className="bg-primary h-2 rounded-full transition-all duration-300"
+            style={{ width: `${progressPercentage}%` }}
+          ></div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {steps.map((step, index) => (
+          <div 
+            key={step.id}
+            className={`flex items-start space-x-3 p-3 rounded-lg cursor-pointer transition-colors ${
+              step.completed 
                 ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' 
-                : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
+                : 'bg-muted/50 hover:bg-muted'
             }`}
+            onClick={step.action}
           >
-            <div className="flex-shrink-0 mt-0.5">
-              {isCompleted(item.field) ? (
-                <span className="text-green-600 dark:text-green-400 text-lg">✓</span>
-              ) : (
-                <span className="text-gray-400 text-lg">○</span>
-              )}
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
+              step.completed 
+                ? 'bg-green-500 text-white' 
+                : 'bg-muted-foreground/20 text-muted-foreground'
+            }`}>
+              {step.completed ? '✓' : index + 1}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center space-x-2">
-                <span className="text-lg">{item.icon}</span>
-                <h3 className={`text-sm font-medium ${
-                  isCompleted(item.field) 
-                    ? 'text-green-800 dark:text-green-200' 
-                    : 'text-gray-900 dark:text-gray-100'
-                }`}>
-                  {item.title}
-                </h3>
+              <div className="font-medium text-sm">
+                {step.title}
               </div>
-              <p className={`text-xs mt-1 ${
-                isCompleted(item.field) 
-                  ? 'text-green-600 dark:text-green-300' 
-                  : 'text-gray-600 dark:text-gray-400'
-              }`}>
-                {item.description}
-              </p>
+              <div className="text-xs text-muted-foreground">
+                {step.description}
+              </div>
             </div>
           </div>
         ))}
-      </div>
 
-      {completedCount === totalItems && (
-        <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-          <div className="flex items-center space-x-2">
-            <span className="text-green-600 dark:text-green-400 text-lg">✓</span>
-            <span className="text-sm font-medium text-green-800 dark:text-green-200">
-              Onboarding complete! 🎉
-            </span>
-          </div>
-          <p className="text-xs text-green-600 dark:text-green-300 mt-1">
-            You're all set up and ready to go.
+        <div className="pt-4 border-t">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleSkip}
+            className="w-full"
+          >
+            Skip Onboarding
+          </Button>
+          <p className="text-xs text-muted-foreground text-center mt-2">
+            You can always complete these steps later
           </p>
         </div>
-      )}
-    </aside>
+      </CardContent>
+    </Card>
   );
 } 

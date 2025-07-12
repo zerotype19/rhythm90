@@ -45,10 +45,14 @@ export default function UserSettings() {
     setSuccess(false);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
-        method: "POST",
+      const response = await fetch(`/api/profile`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: user.name }),
+        body: JSON.stringify({ 
+          name: user.name,
+          role_title: user.role_title,
+          avatar_url: user.avatar_url
+        }),
       });
 
       const data = await response.json();
@@ -57,7 +61,7 @@ export default function UserSettings() {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
       } else {
-        setError(data.message || "Failed to update profile");
+        setError(data.error || "Failed to update profile");
       }
     } catch (error) {
       setError("Network error. Please try again.");
@@ -134,6 +138,70 @@ export default function UserSettings() {
                 <p className="text-sm text-muted-foreground mt-1">
                   This name will be displayed to your team members.
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Role/Title
+                </label>
+                <select
+                  value={user.role_title || ''}
+                  onChange={(e) => setUser((prev: any) => ({ ...prev, role_title: e.target.value }))}
+                  className="w-full px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                >
+                  <option value="">Select your role</option>
+                  <option value="Product Manager">Product Manager</option>
+                  <option value="Developer">Developer</option>
+                  <option value="Designer">Designer</option>
+                  <option value="Analyst">Analyst</option>
+                  <option value="Marketer">Marketer</option>
+                  <option value="Other">Other</option>
+                </select>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Your role helps us personalize your experience.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Avatar
+                </label>
+                <div className="flex items-center space-x-4">
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center text-2xl">
+                    {user.avatar_url ? (
+                      <img 
+                        src={user.avatar_url} 
+                        alt="Avatar" 
+                        className="w-16 h-16 rounded-full object-cover"
+                      />
+                    ) : (
+                      user.name?.charAt(0)?.toUpperCase() || 'U'
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (e) => {
+                            setUser((prev: any) => ({ 
+                              ...prev, 
+                              avatar_url: e.target?.result as string 
+                            }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="text-sm"
+                    />
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Upload a profile picture (optional)
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div>

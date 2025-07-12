@@ -5222,6 +5222,293 @@ export default {
 
     // ===== PERFORMANCE OPTIMIZATION =====
 
+    // ===== ONBOARDING ENDPOINTS =====
+
+    // Update user profile (name, role_title, avatar)
+    if (pathname === "/api/profile" && request.method === "PUT") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as {
+          name?: string;
+          role_title?: string;
+          avatar_url?: string;
+        };
+
+        // Update user profile
+        const updateFields = [];
+        const params = [];
+        
+        if (body.name !== undefined) {
+          updateFields.push("name = ?");
+          params.push(body.name);
+        }
+        
+        if (body.role_title !== undefined) {
+          updateFields.push("role_title = ?");
+          params.push(body.role_title);
+        }
+        
+        if (body.avatar_url !== undefined) {
+          updateFields.push("avatar_url = ?");
+          params.push(body.avatar_url);
+        }
+
+        if (updateFields.length > 0) {
+          updateFields.push("has_completed_profile = TRUE");
+          params.push(userId);
+          
+          await env.DB.prepare(`
+            UPDATE users 
+            SET ${updateFields.join(", ")}
+            WHERE id = ?
+          `).bind(...params).run();
+
+          // Check if user is now fully onboarded
+          await checkAndUpdateOnboardingStatus(env, userId);
+        }
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error updating profile:", error);
+        return jsonResponse({ error: "Failed to update profile" }, 500);
+      }
+    }
+
+    // Get user onboarding status
+    if (pathname === "/api/onboarding/status" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const user = await env.DB.prepare(`
+          SELECT 
+            has_completed_profile,
+            has_joined_team,
+            has_created_play,
+            has_logged_signal,
+            is_onboarded,
+            current_team_id
+          FROM users 
+          WHERE id = ?
+        `).bind(userId).first();
+
+        if (!user) {
+          return jsonResponse({ error: "User not found" }, 404);
+        }
+
+        return jsonResponse({
+          hasCompletedProfile: user.has_completed_profile,
+          hasJoinedTeam: user.has_joined_team,
+          hasCreatedPlay: user.has_created_play,
+          hasLoggedSignal: user.has_logged_signal,
+          isOnboarded: user.is_onboarded,
+          currentTeamId: user.current_team_id
+        });
+      } catch (error) {
+        console.error("Error fetching onboarding status:", error);
+        return jsonResponse({ error: "Failed to fetch onboarding status" }, 500);
+      }
+    }
+
+    // Join team by invite code
+    if (pathname === "/api/onboarding/join-team" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { inviteCode: string };
+        
+        // Find invite by code
+        const invite = await env.DB.prepare(`
+          SELECT i.*, t.name as team_name 
+          FROM invites i
+          JOIN teams t ON i.team_id = t.id
+          WHERE i.code = ? AND i.status = 'pending' AND i.expires_at > datetime('now')
+        `).bind(body.inviteCode).first();
+
+        if (!invite) {
+          return jsonResponse({ error: "Invalid or expired invite code" }, 400);
+        }
+
+        // Add user to team
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO team_users (team_id, user_id, role) 
+          VALUES (?, ?, ?)
+        `).bind(invite.team_id, userId, invite.role || 'member').run();
+
+        // Update user's current team
+        await env.DB.prepare(`
+          UPDATE users 
+          SET current_team_id = ?, has_joined_team = TRUE 
+          WHERE id = ?
+        `).bind(invite.team_id, userId).run();
+
+        // Mark invite as accepted
+        await env.DB.prepare(`
+          UPDATE invites 
+          SET status = 'accepted', accepted_at = datetime('now') 
+          WHERE id = ?
+        `).bind(invite.id).run();
+
+        // Check if user is now fully onboarded
+        await checkAndUpdateOnboardingStatus(env, userId);
+
+        return jsonResponse({ 
+          success: true, 
+          teamId: invite.team_id,
+          teamName: invite.team_name
+        });
+      } catch (error) {
+        console.error("Error joining team:", error);
+        return jsonResponse({ error: "Failed to join team" }, 500);
+      }
+    }
+
+    // Get available teams for user to join
+    if (pathname === "/api/onboarding/available-teams" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        // Get teams user is invited to
+        const invitedTeams = await env.DB.prepare(`
+          SELECT DISTINCT t.id, t.name, i.role as invite_role
+          FROM teams t
+          JOIN invites i ON t.id = i.team_id
+          WHERE i.email = (SELECT email FROM users WHERE id = ?)
+          AND i.status = 'pending'
+          AND i.expires_at > datetime('now')
+        `).bind(userId).all();
+
+        // Get teams user already belongs to
+        const userTeams = await env.DB.prepare(`
+          SELECT t.id, t.name, tu.role
+          FROM teams t
+          JOIN team_users tu ON t.id = tu.team_id
+          WHERE tu.user_id = ?
+        `).bind(userId).all();
+
+        return jsonResponse({
+          invitedTeams: invitedTeams.results,
+          userTeams: userTeams.results
+        });
+      } catch (error) {
+        console.error("Error fetching available teams:", error);
+        return jsonResponse({ error: "Failed to fetch available teams" }, 500);
+      }
+    }
+
+    // Mark play creation as completed
+    if (pathname === "/api/onboarding/play-created" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        await env.DB.prepare(`
+          UPDATE users 
+          SET has_created_play = TRUE 
+          WHERE id = ?
+        `).bind(userId).run();
+
+        // Check if user is now fully onboarded
+        await checkAndUpdateOnboardingStatus(env, userId);
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error marking play as created:", error);
+        return jsonResponse({ error: "Failed to update onboarding status" }, 500);
+      }
+    }
+
+    // Mark signal logging as completed
+    if (pathname === "/api/onboarding/signal-logged" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        await env.DB.prepare(`
+          UPDATE users 
+          SET has_logged_signal = TRUE 
+          WHERE id = ?
+        `).bind(userId).run();
+
+        // Check if user is now fully onboarded
+        await checkAndUpdateOnboardingStatus(env, userId);
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error marking signal as logged:", error);
+        return jsonResponse({ error: "Failed to update onboarding status" }, 500);
+      }
+    }
+
+    // Skip onboarding
+    if (pathname === "/api/onboarding/skip" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        await env.DB.prepare(`
+          UPDATE users 
+          SET is_onboarded = TRUE 
+          WHERE id = ?
+        `).bind(userId).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error skipping onboarding:", error);
+        return jsonResponse({ error: "Failed to skip onboarding" }, 500);
+      }
+    }
+
+    // ===== PERFORMANCE OPTIMIZATION =====
+
+    // Helper function to check and update onboarding status
+    async function checkAndUpdateOnboardingStatus(env: any, userId: string) {
+      try {
+        const user = await env.DB.prepare(`
+          SELECT 
+            has_completed_profile,
+            has_joined_team,
+            has_created_play,
+            has_logged_signal
+          FROM users 
+          WHERE id = ?
+        `).bind(userId).first();
+
+        if (user && 
+            user.has_completed_profile && 
+            user.has_joined_team && 
+            user.has_created_play && 
+            user.has_logged_signal) {
+          
+          await env.DB.prepare(`
+            UPDATE users 
+            SET is_onboarded = TRUE 
+            WHERE id = ?
+          `).bind(userId).run();
+        }
+      } catch (error) {
+        console.error("Error checking onboarding status:", error);
+      }
+    }
+
     return new Response("Not Found", { status: 404 });
   }
 }
