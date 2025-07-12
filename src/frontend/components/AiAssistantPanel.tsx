@@ -5,6 +5,7 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
 import { getAiSignalHelp, generateAiHypothesis } from "../utils/api";
+import PremiumFeatureGuard from "./PremiumFeatureGuard";
 
 interface AiResponse {
   success: boolean;
@@ -78,14 +79,15 @@ export default function AiAssistantPanel() {
   }
 
   return (
-    <Card className="w-full max-w-2xl">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          🤖 AI Assistant
-          <Badge variant="secondary">Premium</Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <PremiumFeatureGuard feature="AI Assistant">
+      <Card className="w-full max-w-2xl">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            🤖 AI Assistant
+            <Badge variant="secondary">Premium</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
         {/* Tab Navigation */}
         <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
           <button
@@ -239,5 +241,6 @@ export default function AiAssistantPanel() {
         )}
       </CardContent>
     </Card>
+    </PremiumFeatureGuard>
   );
 } 

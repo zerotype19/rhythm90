@@ -5210,8 +5210,10 @@ function hexToBytes(hex: string): Uint8Array {
       }
     }
 
-    // 9. Admin Debug Endpoint (Optional)
-    if (pathname === "/api/admin/debug" && request.method === "GET") {
+    // ===== ADMIN DASHBOARD ENDPOINTS =====
+
+    // Admin: Get all users
+    if (pathname === "/api/admin/users" && request.method === "GET") {
       const userId = getCurrentUserId(request);
       const adminStatus = await isAdmin(env, userId);
       if (!adminStatus) {
@@ -5219,21 +5221,531 @@ function hexToBytes(hex: string): Uint8Array {
       }
 
       try {
-        const [users, teams, plays, signals] = await Promise.all([
-          env.DB.prepare(`SELECT id, email, name, role, created_at FROM users ORDER BY created_at DESC LIMIT 50`).all(),
-          env.DB.prepare(`SELECT id, name, created_at FROM teams ORDER BY created_at DESC LIMIT 50`).all(),
-          env.DB.prepare(`SELECT id, team_id, name, created_at FROM plays ORDER BY created_at DESC LIMIT 50`).all(),
-          env.DB.prepare(`SELECT id, play_id, observation, created_at FROM signals ORDER BY created_at DESC LIMIT 50`).all()
-        ]);
+        const users = await env.DB.prepare(`
+          SELECT 
+            u.id,
+            u.email,
+            u.name,
+            u.role,
+            u.is_premium,
+            u.is_active,
+            u.created_at,
+            COUNT(DISTINCT p.id) as play_count,
+            COUNT(DISTINCT s.id) as signal_count,
+            COUNT(DISTINCT t.id) as team_count
+          FROM users u
+          LEFT JOIN plays p ON u.id = p.created_by
+          LEFT JOIN signals s ON u.id = s.created_by
+          LEFT JOIN team_users tu ON u.id = tu.user_id
+          LEFT JOIN teams t ON tu.team_id = t.id
+          GROUP BY u.id
+          ORDER BY u.created_at DESC
+        `).all();
+
+        return jsonResponse({ users: users.results });
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        return jsonResponse({ error: "Failed to fetch users" }, 500);
+      }
+    }
+
+    // Admin: Get all teams
+    if (pathname === "/api/admin/teams" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const teams = await env.DB.prepare(`
+          SELECT 
+            t.id,
+            t.name,
+            t.is_premium,
+            t.is_active,
+            t.created_at,
+            COUNT(DISTINCT p.id) as play_count,
+            COUNT(DISTINCT s.id) as signal_count,
+            COUNT(DISTINCT tu.user_id) as member_count,
+            u.name as owner_name
+          FROM teams t
+          LEFT JOIN plays p ON t.id = p.team_id
+          LEFT JOIN signals s ON p.id = s.play_id
+          LEFT JOIN team_users tu ON t.id = tu.team_id
+          LEFT JOIN team_users owner_tu ON t.id = owner_tu.team_id AND owner_tu.role = 'owner'
+          LEFT JOIN users u ON owner_tu.user_id = u.id
+          GROUP BY t.id
+          ORDER BY t.created_at DESC
+        `).all();
+
+        return jsonResponse({ teams: teams.results });
+      } catch (error) {
+        console.error("Error fetching teams:", error);
+        return jsonResponse({ error: "Failed to fetch teams" }, 500);
+      }
+    }
+
+    // Admin: Get all plays
+    if (pathname === "/api/admin/plays" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const plays = await env.DB.prepare(`
+          SELECT 
+            p.id,
+            p.name,
+            p.target_outcome,
+            p.is_archived,
+            p.created_at,
+            t.name as team_name,
+            u.name as creator_name,
+            COUNT(s.id) as signal_count
+          FROM plays p
+          LEFT JOIN teams t ON p.team_id = t.id
+          LEFT JOIN users u ON p.created_by = u.id
+          LEFT JOIN signals s ON p.id = s.play_id
+          GROUP BY p.id
+          ORDER BY p.created_at DESC
+        `).all();
+
+        return jsonResponse({ plays: plays.results });
+      } catch (error) {
+        console.error("Error fetching plays:", error);
+        return jsonResponse({ error: "Failed to fetch plays" }, 500);
+      }
+    }
+
+    // Admin: Get all signals
+    if (pathname === "/api/admin/signals" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const signals = await env.DB.prepare(`
+          SELECT 
+            s.id,
+            s.observation,
+            s.created_at,
+            p.name as play_name,
+            t.name as team_name,
+            u.name as creator_name
+          FROM signals s
+          LEFT JOIN plays p ON s.play_id = p.id
+          LEFT JOIN teams t ON p.team_id = t.id
+          LEFT JOIN users u ON s.created_by = u.id
+          ORDER BY s.created_at DESC
+        `).all();
+
+        return jsonResponse({ signals: signals.results });
+      } catch (error) {
+        console.error("Error fetching signals:", error);
+        return jsonResponse({ error: "Failed to fetch signals" }, 500);
+      }
+    }
+
+    // Admin: Deactivate/Reactivate User
+    if (pathname === "/api/admin/users/toggle-status" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { targetUserId: string; isActive: boolean };
+        
+        await env.DB.prepare(`
+          UPDATE users SET is_active = ? WHERE id = ?
+        `).bind(body.isActive, body.targetUserId).run();
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_log (id, admin_user_id, action_type, target_type, target_id, details)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          body.isActive ? 'user_reactivated' : 'user_deactivated',
+          'user',
+          body.targetUserId,
+          JSON.stringify({ isActive: body.isActive })
+        ).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error toggling user status:", error);
+        return jsonResponse({ error: "Failed to update user status" }, 500);
+      }
+    }
+
+    // Admin: Deactivate/Reactivate Team
+    if (pathname === "/api/admin/teams/toggle-status" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { teamId: string; isActive: boolean };
+        
+        await env.DB.prepare(`
+          UPDATE teams SET is_active = ? WHERE id = ?
+        `).bind(body.isActive, body.teamId).run();
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_log (id, admin_user_id, action_type, target_type, target_id, details)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          body.isActive ? 'team_reactivated' : 'team_deactivated',
+          'team',
+          body.teamId,
+          JSON.stringify({ isActive: body.isActive })
+        ).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error toggling team status:", error);
+        return jsonResponse({ error: "Failed to update team status" }, 500);
+      }
+    }
+
+    // Admin: Archive/Unarchive Play
+    if (pathname === "/api/admin/plays/toggle-archive" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { playId: string; isArchived: boolean };
+        
+        await env.DB.prepare(`
+          UPDATE plays SET is_archived = ? WHERE id = ?
+        `).bind(body.isArchived, body.playId).run();
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_log (id, admin_user_id, action_type, target_type, target_id, details)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          body.isArchived ? 'play_archived' : 'play_unarchived',
+          'play',
+          body.playId,
+          JSON.stringify({ isArchived: body.isArchived })
+        ).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error toggling play archive status:", error);
+        return jsonResponse({ error: "Failed to update play status" }, 500);
+      }
+    }
+
+    // Admin: Delete Signal
+    if (pathname === "/api/admin/signals/delete" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { signalId: string };
+        
+        await env.DB.prepare(`
+          DELETE FROM signals WHERE id = ?
+        `).bind(body.signalId).run();
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_log (id, admin_user_id, action_type, target_type, target_id, details)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          'signal_deleted',
+          'signal',
+          body.signalId,
+          JSON.stringify({})
+        ).run();
+
+        return jsonResponse({ success: true });
+      } catch (error) {
+        console.error("Error deleting signal:", error);
+        return jsonResponse({ error: "Failed to delete signal" }, 500);
+      }
+    }
+
+    // Admin: Bulk Actions
+    if (pathname === "/api/admin/bulk-actions" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      if (!adminStatus) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      try {
+        const body = await request.json() as { 
+          action: string; 
+          targetType: string; 
+          targetIds: string[]; 
+          isActive?: boolean;
+          isArchived?: boolean;
+        };
+        
+        let query = '';
+        let params: any[] = [];
+        
+        if (body.action === 'deactivate' && body.targetType === 'users') {
+          query = `UPDATE users SET is_active = FALSE WHERE id IN (${body.targetIds.map(() => '?').join(',')})`;
+          params = body.targetIds;
+        } else if (body.action === 'activate' && body.targetType === 'users') {
+          query = `UPDATE users SET is_active = TRUE WHERE id IN (${body.targetIds.map(() => '?').join(',')})`;
+          params = body.targetIds;
+        } else if (body.action === 'deactivate' && body.targetType === 'teams') {
+          query = `UPDATE teams SET is_active = FALSE WHERE id IN (${body.targetIds.map(() => '?').join(',')})`;
+          params = body.targetIds;
+        } else if (body.action === 'activate' && body.targetType === 'teams') {
+          query = `UPDATE teams SET is_active = TRUE WHERE id IN (${body.targetIds.map(() => '?').join(',')})`;
+          params = body.targetIds;
+        } else if (body.action === 'archive' && body.targetType === 'plays') {
+          query = `UPDATE plays SET is_archived = TRUE WHERE id IN (${body.targetIds.map(() => '?').join(',')})`;
+          params = body.targetIds;
+        } else if (body.action === 'unarchive' && body.targetType === 'plays') {
+          query = `UPDATE plays SET is_archived = FALSE WHERE id IN (${body.targetIds.map(() => '?').join(',')})`;
+          params = body.targetIds;
+        } else {
+          return errorResponse("Invalid bulk action", 400);
+        }
+
+        await env.DB.prepare(query).bind(...params).run();
+
+        // Log admin action
+        await env.DB.prepare(`
+          INSERT INTO admin_audit_log (id, admin_user_id, action_type, target_type, target_id, details)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          crypto.randomUUID(),
+          userId,
+          `bulk_${body.action}`,
+          body.targetType,
+          body.targetIds.join(','),
+          JSON.stringify({ count: body.targetIds.length, action: body.action })
+        ).run();
+
+        return jsonResponse({ success: true, updatedCount: body.targetIds.length });
+      } catch (error) {
+        console.error("Error performing bulk action:", error);
+        return jsonResponse({ error: "Failed to perform bulk action" }, 500);
+      }
+    }
+
+    // ===== ANALYTICS ENDPOINTS =====
+
+    // Analytics: Get global analytics (admin only)
+    if (pathname === "/api/analytics" && request.method === "GET") {
+      const userId = getCurrentUserId(request);
+      const adminStatus = await isAdmin(env, userId);
+      
+      try {
+        let query = '';
+        let params: any[] = [];
+        
+        if (adminStatus) {
+          // Admin view - global analytics
+          query = `
+            SELECT 
+              (SELECT COUNT(*) FROM users WHERE is_active = TRUE) as active_users,
+              (SELECT COUNT(*) FROM plays WHERE is_archived = FALSE) as total_plays,
+              (SELECT COUNT(*) FROM signals) as total_signals,
+              (SELECT COUNT(*) FROM teams WHERE is_active = TRUE) as total_teams
+          `;
+        } else {
+          // User view - team-specific analytics
+          const user = await env.DB.prepare(`SELECT current_team_id FROM users WHERE id = ?`).bind(userId).first();
+          if (!user?.current_team_id) {
+            return jsonResponse({ 
+              activeUsers: 0,
+              totalPlays: 0,
+              totalSignals: 0,
+              topTeams: []
+            });
+          }
+          
+          query = `
+            SELECT 
+              (SELECT COUNT(*) FROM team_users WHERE team_id = ?) as active_users,
+              (SELECT COUNT(*) FROM plays WHERE team_id = ? AND is_archived = FALSE) as total_plays,
+              (SELECT COUNT(*) FROM signals s JOIN plays p ON s.play_id = p.id WHERE p.team_id = ?) as total_signals,
+              (SELECT COUNT(*) FROM teams WHERE id = ?) as total_teams
+          `;
+          params = [user.current_team_id, user.current_team_id, user.current_team_id, user.current_team_id];
+        }
+
+        const analytics = await env.DB.prepare(query).bind(...params).first();
+
+        // Get top teams (for admin view)
+        let topTeams: any[] = [];
+        if (adminStatus) {
+          const teams = await env.DB.prepare(`
+            SELECT 
+              t.name,
+              COUNT(DISTINCT p.id) as play_count,
+              COUNT(DISTINCT s.id) as signal_count
+            FROM teams t
+            LEFT JOIN plays p ON t.id = p.team_id AND p.is_archived = FALSE
+            LEFT JOIN signals s ON p.id = s.play_id
+            WHERE t.is_active = TRUE
+            GROUP BY t.id
+            ORDER BY play_count DESC, signal_count DESC
+            LIMIT 10
+          `).all();
+          topTeams = teams.results;
+        }
 
         return jsonResponse({
-          users: users.results,
-          teams: teams.results,
-          plays: plays.results,
-          signals: signals.results
+          activeUsers: analytics?.active_users || 0,
+          totalPlays: analytics?.total_plays || 0,
+          totalSignals: analytics?.total_signals || 0,
+          totalTeams: analytics?.total_teams || 0,
+          topTeams
         });
       } catch (error) {
-        console.error("Error fetching debug data:", error);
-        return jsonResponse({ error: "Failed to fetch debug data" }, 500);
+        console.error("Error fetching analytics:", error);
+        return jsonResponse({ error: "Failed to fetch analytics" }, 500);
       }
+    }
+
+    // ===== PREMIUM FEATURE MIDDLEWARE =====
+
+    // Helper function to check premium status
+    async function checkPremiumAccess(env: Env, userId: string): Promise<boolean> {
+      const user = await env.DB.prepare(`
+        SELECT u.is_premium, t.is_premium as team_premium
+        FROM users u
+        LEFT JOIN team_users tu ON u.id = tu.user_id
+        LEFT JOIN teams t ON tu.team_id = t.id
+        WHERE u.id = ? AND u.current_team_id = t.id
+      `).bind(userId).first();
+      
+      return user?.is_premium || user?.team_premium || false;
+    }
+
+    // ===== STRIPE BILLING INTEGRATION =====
+
+    // Stripe webhook handler
+    if (pathname === "/api/stripe/webhook" && request.method === "POST") {
+      try {
+        const body = await request.text();
+        const signature = request.headers.get('stripe-signature');
+        
+        if (!signature) {
+          return jsonResponse({ error: "No signature" }, 400);
+        }
+
+        // TODO: Implement signature verification
+        let event: any;
+        try {
+          event = JSON.parse(body);
+        } catch (err) {
+          return jsonResponse({ error: "Invalid JSON" }, 400);
+        }
+
+        // Handle different event types
+        switch (event.type) {
+          case 'customer.subscription.created':
+          case 'customer.subscription.updated': {
+            const subscription = event.data.object;
+            const teamId = subscription.metadata?.team_id;
+            
+            if (teamId) {
+              await env.DB.prepare(`
+                UPDATE teams SET is_premium = TRUE WHERE id = ?
+              `).bind(teamId).run();
+              
+              await env.DB.prepare(`
+                UPDATE users SET is_premium = TRUE 
+                WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)
+              `).bind(teamId).run();
+            }
+            break;
+          }
+          
+          case 'customer.subscription.deleted': {
+            const subscription = event.data.object;
+            const teamId = subscription.metadata?.team_id;
+            
+            if (teamId) {
+              await env.DB.prepare(`
+                UPDATE teams SET is_premium = FALSE WHERE id = ?
+              `).bind(teamId).run();
+              
+              await env.DB.prepare(`
+                UPDATE users SET is_premium = FALSE 
+                WHERE id IN (SELECT user_id FROM team_users WHERE team_id = ?)
+              `).bind(teamId).run();
+            }
+            break;
+          }
+        }
+
+        return jsonResponse({ received: true });
+      } catch (error) {
+        console.error('Stripe webhook error:', error);
+        return jsonResponse({ error: "Webhook processing failed" }, 500);
+      }
+    }
+
+    // ===== PREMIUM FEATURE PROTECTION =====
+
+    // AI Assistant - Premium only
+    if (pathname === "/ai-signal" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const isPremium = await checkPremiumAccess(env, userId);
+      if (!isPremium) {
+        return jsonResponse({ 
+          error: "Premium feature", 
+          requiresPremium: true,
+          message: "AI Assistant is a premium feature. Upgrade to access advanced AI capabilities."
+        }, 403);
+      }
+
+      // Continue with existing AI logic...
+    }
+
+    if (pathname === "/ai-hypothesis" && request.method === "POST") {
+      const userId = getCurrentUserId(request);
+      if (!userId) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+
+      const isPremium = await checkPremiumAccess(env, userId);
+      if (!isPremium) {
+        return jsonResponse({ 
+          error: "Premium feature", 
+          requiresPremium: true,
+          message: "AI Hypothesis is a premium feature. Upgrade to access advanced AI capabilities."
+        }, 403);
+      }
+
+      // Continue with existing AI logic...
     } 
